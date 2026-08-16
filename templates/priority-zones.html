@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Priority Zones | RESQAI{% endblock %}
+{% block breadcrumbs %}<span class="sep">/</span><span>Dashboard</span><span class="sep">/</span><span class="current">Priority Zones</span>{% endblock %}
+
+{% block content %}
+<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px">
+  <div>
+    <div class="page-title">Priority zones</div>
+    <div class="page-desc">Priority combines structural risk, population, accessibility, infrastructure and evidence — never AI confidence alone.</div>
+  </div>
+  <button class="btn btn-primary btn-sm" id="new-zone" data-testid="new-zone-button"><i class="fa-solid fa-circle-plus"></i> Generate zone</button>
+</div>
+
+<div id="zone-list" data-testid="zone-list"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.RESQAI_PAGE_INIT = function () {
+  const R = window.RESQAI;
+  const FACTORS = [["structural_risk","Structural Risk"],["population_exposure","Population Exposure"],["accessibility","Accessibility"],["infrastructure_risk","Infrastructure Risk"],["evidence_confidence","Evidence Confidence"]];
+
+  async function load() {
+    const el = document.getElementById("zone-list");
+    el.innerHTML = R.loadingBlock(3);
+    try {
+      const list = await R.API.get("/priority-zones/");
+      if (!list.length) { el.innerHTML = R.emptyState("No priority zones found", "Generate a zone by combining vulnerability, accessibility and evidence.", "fa-layer-group"); return; }
+      el.innerHTML = list.map(cardHtml).join("");
+      list.forEach(z => document.querySelector(`[data-why="${z.id}"]`).addEventListener("click", () => why(z)));
+      const pre = R.qp("zone"); if (pre) { const z = list.find(x => String(x.id) === pre); if (z) why(z); }
+    } catch (e) { el.innerHTML = R.errorState(e.detail); }
+  }
+
+  function cardHtml(z) {
+    return `<div class="card card-pad" style="margin-bottom:14px" data-testid="zone-${z.id}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
+        <div>
+          <div><span class="mono-code">${z.zone_code}</span> · ${R.escapeHtml(z.disaster_name)}</div>
+          <div style="font-family:var(--font-head);font-weight:700;font-size:17px;margin-top:3px">${R.escapeHtml(z.location)}</div>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">${R.verifBadge(z.verification_status)}<span class="badge neutral">Evidence ${z.evidence_confidence}%</span></div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--font-head);font-size:34px;font-weight:800;line-height:1">${z.priority_score}<span style="font-size:16px;color:var(--muted)">/100</span></div>
+          <div class="metric-label">Priority score</div>
+        </div>
+      </div>
+      <div class="grid grid-5" style="margin-top:16px">
+        ${FACTORS.map(([k,l]) => `<div><div class="metric-label" style="font-size:10px">${l}</div><div style="font-family:var(--font-mono);font-size:16px;margin-top:4px">${z[k]}</div>
+        <div class="factor-track" style="margin-top:6px"><div class="factor-fill" style="width:${z[k]}%"></div></div></div>`).join("")}
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button class="btn btn-primary btn-sm" data-why="${z.id}" data-testid="why-${z.id}"><i class="fa-solid fa-circle-question"></i> Why this priority?</button>
+        <a class="btn btn-ghost btn-sm" href="/response-coordination/?disaster=${z.disaster}"><i class="fa-solid fa-people-group"></i> Assign response</a>
+      </div>
+    </div>`;
+  }
+
+  function why(z) {
+    const body = `
+      <div style="text-align:center;margin-bottom:18px">
+        <div style="font-family:var(--font-head);font-size:44px;font-weight:800">${z.priority_score}<span style="font-size:18px;color:var(--muted)">/100</span></div>
+        <div class="metric-label">Priority score</div>
+      </div>
+      <div class="section-title">Contributing factors</div>
+      ${FACTORS.map(([k,l]) => `<div class="factor-row"><div class="lbl">${l}</div><div class="factor-track"><div class="factor-fill" style="width:${z[k]}%"></div></div><div class="val">${z[k]}</div></div>`).join("")}
+      <div class="section-title" style="margin-top:18px">Evidence</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${(z.evidence_refs||[]).length ? z.evidence_refs.map(r => `<span class="evidence-ref" style="border:1px solid var(--border-strong);padding:4px 9px;border-radius:6px">${R.escapeHtml(r)}</span>`).join("") : '<span style="color:var(--muted)">No linked evidence references.</span>'}</div>
+      <div class="kv" style="margin-top:18px">
+        <div class="k">Status</div><div>${R.verifBadge(z.verification_status)}</div>
+        <div class="k">Vulnerability</div><div>${z.vulnerability}</div>
+        <div class="k">Last updated</div><div>${new Date(z.updated_at).toLocaleString()}</div>
+      </div>
+      <div class="responsible-note" style="margin-top:16px"><i class="fa-solid fa-shield-halved"></i><span>Priority is a weighted combination of factors, not AI confidence alone. Verify against official field assessment before acting.</span></div>`;
+    R.openModal("Why was " + z.zone_code + " prioritized?", body,
+      `<button class="btn btn-primary" onclick="RESQAI.closeModal()">Close</button>`);
+  }
+
+  async function openNewZone() {
+    let disasters = [];
+    try { disasters = await R.API.get("/disasters/"); } catch (e) { R.Toast.error("Could not load incidents", e.detail); return; }
+    if (!disasters.length) { R.Toast.warning("No incidents", "Create an incident first."); return; }
+    const body = `
+      <div class="form-row"><label class="field-label">Disaster incident</label>
+      <select class="select" id="z-disaster" data-testid="zone-disaster">${disasters.map(d => `<option value="${d.id}">${d.incident_code} · ${R.escapeHtml(d.name)}</option>`).join("")}</select></div>
+      <div class="form-row"><label class="field-label">Zone location</label><input class="input" id="z-location" placeholder="e.g. Riverside Ward Block C" data-testid="zone-location" /></div>
+      ${FACTORS.map(([k,l]) => `<div class="form-row"><label class="field-label">${l} (0–100)</label><input class="input" type="number" min="0" max="100" id="z-${k}" value="60" data-testid="zone-${k}" /></div>`).join("")}
+      <div class="form-row"><label class="field-label">Vulnerability (0–100)</label><input class="input" type="number" min="0" max="100" id="z-vulnerability" value="60" data-testid="zone-vulnerability" /></div>
+      <div class="form-row"><label class="field-label">Evidence references (comma-separated)</label><input class="input" id="z-evidence" placeholder="IMG-0001, REP-0002" data-testid="zone-evidence" /></div>`;
+    R.openModal("Generate priority zone", body,
+      `<button class="btn btn-ghost" onclick="RESQAI.closeModal()">Cancel</button><button class="btn btn-primary" id="save-zone" data-testid="save-zone">Compute &amp; save</button>`);
+    document.getElementById("save-zone").addEventListener("click", async () => {
+      const payload = {
+        disaster: document.getElementById("z-disaster").value,
+        location: document.getElementById("z-location").value,
+        vulnerability: document.getElementById("z-vulnerability").value,
+        evidence_refs: document.getElementById("z-evidence").value,
+      };
+      FACTORS.forEach(([k]) => payload[k] = document.getElementById("z-"+k).value);
+      try {
+        const z = await R.API.post("/priority-zones/", payload);
+        R.closeModal(); R.Toast.success("Priority zone generated", z.zone_code + " · score " + z.priority_score);
+        load();
+      } catch (e) { R.Toast.error("Could not generate zone", e.detail); }
+    });
+  }
+
+  load();
+  document.getElementById("new-zone").addEventListener("click", openNewZone);
+};
+</script>
+{% endblock %}

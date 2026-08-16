@@ -1,0 +1,65 @@
+{% extends "public_base.html" %}
+
+{% block title %}Sign in | RESQAI{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card card">
+    <div class="card-pad">
+      <div class="brand" style="margin-bottom:6px"><div class="brand-mark">R</div><div class="brand-name">RESQAI</div></div>
+      <h2 style="font-size:22px;margin-top:14px">Sign in</h2>
+      <p style="color:var(--muted);font-size:13.5px;margin-top:4px">Access the emergency operations workspace.</p>
+
+      <form id="login-form" style="margin-top:22px" data-testid="login-form">
+        <div class="form-row">
+          <label class="field-label" for="email">Email</label>
+          <input class="input" type="email" id="email" required placeholder="you@agency.gov" data-testid="login-email" />
+        </div>
+        <div class="form-row">
+          <label class="field-label" for="password">Password</label>
+          <input class="input" type="password" id="password" required placeholder="••••••••" data-testid="login-password" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="login-submit" data-testid="login-submit">Sign In</button>
+      </form>
+
+      <div class="auth-links">
+        <a href="/register/" data-testid="link-register">Create account</a>
+        <a href="#" id="forgot-link" data-testid="link-forgot">Forgot password?</a>
+      </div>
+
+      <div class="responsible-note" style="margin-top:20px;font-size:11.5px">
+        <i class="fa-solid fa-circle-info"></i>
+        <span>Demo account: <strong>demo@resqai.io</strong> / <strong>demo12345</strong></span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const R = window.RESQAI;
+  if (R.Auth.isAuthed()) location.href = "/dashboard/";
+
+  document.getElementById("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("login-submit");
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Signing in…';
+    try {
+      const res = await R.API.post("/auth/login/", { email, password });
+      R.Auth.set(res.token, res.user);
+      R.Toast.success("Signed in", "Welcome back, " + (res.user.full_name || res.user.email));
+      setTimeout(() => location.href = "/dashboard/", 350);
+    } catch (err) {
+      R.Toast.error("Sign in failed", err.detail || "Invalid credentials.");
+      btn.disabled = false; btn.textContent = "Sign In";
+    }
+  });
+  document.getElementById("forgot-link").addEventListener("click", (e) => {
+    e.preventDefault();
+    R.Toast.info("Password recovery", "Contact your RESQAI administrator to reset your password.");
+  });
+</script>
+{% endblock %}

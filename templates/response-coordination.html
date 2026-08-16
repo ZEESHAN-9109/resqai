@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Response Coordination | RESQAI{% endblock %}
+{% block breadcrumbs %}<span class="sep">/</span><span>Dashboard</span><span class="sep">/</span><span class="current">Response Coordination</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-title">Response coordination</div>
+  <div class="page-desc">Assign responders to incidents and priority zones. Each assignment is recorded in the evidence timeline.</div>
+</div>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-head"><h3>New assignment</h3></div>
+    <div class="card-pad">
+      <form id="assign-form" data-testid="assign-form">
+        <div class="form-row"><label class="field-label">Incident</label><select class="select" id="a-disaster" data-testid="assign-disaster"></select></div>
+        <div class="form-row"><label class="field-label">Responder</label><select class="select" id="a-responder" data-testid="assign-responder"></select></div>
+        <div class="form-grid">
+          <div class="form-row"><label class="field-label">Role</label><select class="select" id="a-role" data-testid="assign-role">
+            <option value="field_responder">Field Responder</option><option value="incident_commander">Incident Commander</option>
+            <option value="analyst">Analyst</option><option value="verifier">Verifier</option><option value="administrator">Administrator</option></select></div>
+          <div class="form-row"><label class="field-label">Priority</label><select class="select" id="a-priority" data-testid="assign-priority">
+            <option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="critical">Critical</option></select></div>
+        </div>
+        <div class="form-row"><label class="field-label">Task</label><input class="input" id="a-task" placeholder="e.g. Verify structural damage in Block C" data-testid="assign-task" /></div>
+        <div class="form-row"><label class="field-label">Notes</label><textarea class="textarea" id="a-notes" placeholder="Optional briefing…" data-testid="assign-notes"></textarea></div>
+        <button type="submit" class="btn btn-primary btn-block" id="assign-submit" data-testid="assign-submit"><i class="fa-solid fa-user-plus"></i> Assign responder</button>
+      </form>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Recent assignments</h3><a class="btn btn-ghost btn-sm" href="/response-management/">Manage all</a></div>
+    <div class="card-pad" id="recent" data-testid="recent-assignments"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.RESQAI_PAGE_INIT = function () {
+  const R = window.RESQAI;
+
+  async function init() {
+    try {
+      const [disasters, users] = await Promise.all([R.API.get("/disasters/"), R.API.get("/users/")]);
+      const ds = document.getElementById("a-disaster");
+      ds.innerHTML = disasters.length ? disasters.map(d => `<option value="${d.id}">${d.incident_code} · ${R.escapeHtml(d.name)}</option>`).join("") : '<option value="">No incidents — create one first</option>';
+      const pre = R.qp("disaster"); if (pre) ds.value = pre;
+      document.getElementById("a-responder").innerHTML = users.map(u => `<option value="${u.id}">${R.escapeHtml(u.full_name || u.email)} (${R.titleCase(u.role)})</option>`).join("");
+    } catch (e) { R.Toast.error("Could not load data", e.detail); }
+    loadRecent();
+  }
+
+  async function loadRecent() {
+    const el = document.getElementById("recent");
+    try {
+      const list = await R.API.get("/responses/assignments/");
+      if (!list.length) { el.innerHTML = R.emptyState("No assignments", "Assignments you create appear here.", "fa-people-group"); return; }
+      el.innerHTML = list.slice(0,8).map(a => `
+        <div class="card card-pad" style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;gap:10px">
+            <div><span class="mono-code">${a.assignment_code}</span><div style="font-weight:600;margin-top:2px">${R.escapeHtml(a.task)}</div>
+            <div style="font-size:12.5px;color:var(--muted);margin-top:3px">${R.escapeHtml(a.responder_name||'')} · ${R.escapeHtml(a.disaster_name)}</div></div>
+            <div style="text-align:right">${R.severityBadge(a.priority)}<div style="margin-top:6px">${R.statusBadge(a.status)}</div></div>
+          </div></div>`).join("");
+    } catch (e) { el.innerHTML = R.errorState(e.detail); }
+  }
+
+  document.getElementById("assign-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const respSel = document.getElementById("a-responder");
+    const payload = {
+      disaster: document.getElementById("a-disaster").value,
+      responder: respSel.value,
+      responder_name: respSel.options[respSel.selectedIndex] ? respSel.options[respSel.selectedIndex].text.replace(/ \(.*\)$/, "") : "",
+      role: document.getElementById("a-role").value,
+      priority: document.getElementById("a-priority").value,
+      task: document.getElementById("a-task").value.trim(),
+      notes: document.getElementById("a-notes").value.trim(),
+    };
+    if (!payload.disaster || !payload.task) { R.Toast.warning("Missing fields", "Incident and task are required."); return; }
+    const btn = document.getElementById("assign-submit");
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Assigning…';
+    try {
+      const a = await R.API.post("/responses/assignments/", payload);
+      R.Toast.success("Responder assigned.", a.assignment_code + " created.");
+      document.getElementById("a-task").value = ""; document.getElementById("a-notes").value = "";
+      loadRecent();
+    } catch (err) { R.Toast.error("Could not assign", err.detail); }
+    finally { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> Assign responder'; }
+  });
+
+  init();
+};
+</script>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Disaster Map | RESQAI{% endblock %}
+{% block breadcrumbs %}<span class="sep">/</span><span>Dashboard</span><span class="sep">/</span><span class="current">Disaster Map</span>{% endblock %}
+
+{% block content %}
+<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px">
+  <div>
+    <div class="page-title">Disaster map</div>
+    <div class="page-desc">GIS view of incidents, priority zones and live public feeds. Toggle layers below.</div>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <input class="input" id="map-search" placeholder="Search incident / location…" style="width:220px" data-testid="map-search" />
+    <button class="btn btn-ghost btn-sm" id="map-refresh" data-testid="map-refresh"><i class="fa-solid fa-rotate"></i> Refresh</button>
+  </div>
+</div>
+
+<div class="card card-pad" style="margin-bottom:14px">
+  <div class="layer-controls" id="layer-controls" data-testid="layer-controls"></div>
+</div>
+
+<div class="map-panel" style="height:560px">
+  <div id="map" class="map-el"></div>
+  <div class="map-legend" data-testid="map-legend">
+    <h4>Legend</h4>
+    <div class="legend-row"><span class="legend-swatch" style="background:#4f8ff0"></span> Incident</div>
+    <div class="legend-row"><span class="legend-swatch" style="background:#c084fc"></span> Priority zone</div>
+    <div class="legend-row"><span class="legend-swatch" style="background:#f2a63b"></span> Earthquake (USGS)</div>
+    <div class="legend-row"><span class="legend-swatch" style="background:#ef5350"></span> Active fire (GDACS / NASA EONET)</div>
+    <div class="legend-row"><span class="legend-swatch" style="background:#35c98a"></span> Response team</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.RESQAI_PAGE_INIT = function () {
+  const R = window.RESQAI, M = R.MapManager;
+  const LAYERS = [
+    ["earthquake","Earthquakes",true],["fire","Active Fires",true],["incident","Incidents",true],
+    ["priority","Priority Zones",true],["route","Blocked Routes",false],["team","Response Teams",true],
+    ["hospital","Hospitals",false],["shelter","Shelters",false],["relief","Relief Centres",false],
+  ];
+  let markers = [];
+
+  function buildToggles() {
+    const c = document.getElementById("layer-controls");
+    c.innerHTML = LAYERS.map(([k,label,on]) => `
+      <span class="layer-toggle ${on?'on':''}" data-layer="${k}" data-testid="layer-${k}">
+        <span class="sw" style="background:${M.color(k)}"></span>${label}</span>`).join("");
+    c.querySelectorAll(".layer-toggle").forEach(t => t.addEventListener("click", () => {
+      const on = !t.classList.contains("on");
+      t.classList.toggle("on", on);
+      M.toggle(t.dataset.layer, on);
+    }));
+  }
+
+  async function loadAll() {
+    if (!M.init("map", [20, 78], 3)) { R.Toast.error("Map error", "Leaflet failed to load."); return; }
+    setTimeout(() => M.map.invalidateSize(), 150);
+    Object.keys(M.layers).forEach(k => M.clear(k));
+    markers = [];
+    const pts = [];
+
+    try {
+      const incidents = await R.API.get("/disasters/");
+      incidents.forEach(d => {
+        M.addMarker("incident", d.latitude, d.longitude,
+          `<strong>${R.escapeHtml(d.name)}</strong><br>${R.titleCase(d.disaster_type)} · ${R.titleCase(d.severity)}<br><a href="/disaster-details/?id=${d.id}">Open details</a>`);
+        pts.push([d.latitude, d.longitude]);
+        markers.push({ name: (d.name+" "+d.location).toLowerCase(), lat: d.latitude, lng: d.longitude });
+      });
+      const zones = await R.API.get("/priority-zones/");
+      zones.forEach(z => { if (z.latitude) M.addCircle("priority", z.latitude, z.longitude, 900, `${z.zone_code} · Priority ${z.priority_score}/100`); });
+      const routes = await R.API.get("/routes/plan/");
+      routes.forEach(rt => M.addMarker("route", rt.dest_lat, rt.dest_lng, `${rt.route_code}: ${R.escapeHtml(rt.route_status_display)}`));
+    } catch (e) { R.Toast.error("Could not load incidents", e.detail); }
+
+    try {
+      const eq = await R.LiveData.fetchEarthquakes();
+      if (eq.status === "connected") (eq.events||[]).slice(0,60).forEach(e =>
+        M.addMarker("earthquake", e.latitude, e.longitude, `<strong>M ${e.magnitude}</strong> · USGS<br>${R.escapeHtml(e.location||'')}<br>Depth ${e.depth_km!=null?e.depth_km.toFixed(0)+' km':'—'}`));
+      else R.Toast.warning("USGS unavailable", "Live earthquake layer could not load.");
+    } catch(e){}
+    try {
+      const fr = await R.LiveData.fetchFires();
+      if (fr.status === "connected") (fr.detections||[]).slice(0,150).forEach(f =>
+        M.addMarker("fire", f.latitude, f.longitude, `Active fire · GDACS / NASA EONET<br>Confidence ${R.escapeHtml(String(f.confidence||'—'))}`));
+    } catch(e){}
+
+    if (pts.length) M.fit(pts);
+  }
+
+  buildToggles();
+  loadAll();
+  document.getElementById("map-refresh").addEventListener("click", loadAll);
+  document.getElementById("map-search").addEventListener("input", R.debounce((e) => {
+    const q = e.target.value.toLowerCase().trim(); if (!q) return;
+    const hit = markers.find(m => m.name.includes(q));
+    if (hit) M.map.setView([hit.lat, hit.lng], 9);
+  }, 350));
+};
+</script>
+{% endblock %}

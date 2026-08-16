@@ -1,0 +1,78 @@
+{% extends "public_base.html" %}
+
+{% block title %}RESQAI — Evidence-driven disaster intelligence{% endblock %}
+
+{% block content %}
+<section class="hero" id="home">
+  <div class="hero-glow"></div>
+  <span class="hero-eyebrow"><span class="dot dot-green pulse"></span> Live disaster intelligence · decision-support only</span>
+  <h1>Turn drone, satellite and street-level imagery into faster, safer response decisions.</h1>
+  <p class="lead">RESQAI maps damaged buildings, blocked routes and likely service disruptions after floods, cyclones, fires and earthquakes — with confidence scores, human verification and full evidence traceability behind every priority.</p>
+  <div class="hero-actions">
+    <a href="/register/" class="btn btn-primary" data-testid="hero-get-started">Create an account <i class="fa-solid fa-arrow-right"></i></a>
+    <a href="/login/" class="btn btn-ghost" data-testid="hero-signin">Sign in</a>
+  </div>
+
+  <div class="flow-strip">
+    <div class="flow-node"><div class="n">01</div><div class="t">Real-world data</div></div>
+    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+    <div class="flow-node"><div class="n">02</div><div class="t">Analysis</div></div>
+    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+    <div class="flow-node"><div class="n">03</div><div class="t">Verification</div></div>
+    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+    <div class="flow-node"><div class="n">04</div><div class="t">Priority</div></div>
+    <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+    <div class="flow-node"><div class="n">05</div><div class="t">Response</div></div>
+  </div>
+</section>
+
+<section class="section" id="problem" style="background:var(--bg-2)">
+  <span class="section-eyebrow">The problem</span>
+  <h2>After a disaster, the hardest task is knowing where to go first.</h2>
+  <p class="section-lead">Imagery pours in from drones, satellites and the field faster than any team can triage. Damage is uncertain, routes change by the minute, and every decision must be defensible. RESQAI organises that flood of information into verifiable operational intelligence — without pretending to replace inspectors on the ground.</p>
+</section>
+
+<section class="section" id="features">
+  <span class="section-eyebrow">The solution</span>
+  <h2>One workspace from raw imagery to assigned responders.</h2>
+  <div class="feature-grid">
+    <div class="card feature-card"><div class="fi"><i class="fa-solid fa-satellite-dish"></i></div><h3>Live disaster intelligence</h3><p>Real-time USGS earthquakes and GDACS / NASA EONET active fires, each stamped with source, freshness and data age. No fabricated events.</p></div>
+    <div class="card feature-card"><div class="fi"><i class="fa-solid fa-image"></i></div><h3>Image analysis</h3><p>Vision AI flags potential damaged buildings, blocked roads and service disruptions with calibrated confidence.</p></div>
+    <div class="card feature-card"><div class="fi"><i class="fa-solid fa-user-check"></i></div><h3>Human verification</h3><p>Responders confirm, correct or reject each finding. Nothing is ever auto-marked as verified.</p></div>
+    <div class="card feature-card"><div class="fi"><i class="fa-solid fa-layer-group"></i></div><h3>Priority zones</h3><p>Vulnerability and accessibility are combined with evidence — priority is never AI confidence alone.</p></div>
+    <div class="card feature-card"><div class="fi"><i class="fa-solid fa-diagram-project"></i></div><h3>Evidence traceability</h3><p>Every recommendation carries a timeline of the images, reports and verifications behind it.</p></div>
+    <div class="card feature-card"><div class="fi"><i class="fa-solid fa-route"></i></div><h3>Response &amp; routing</h3><p>Assign responders, track status and plan routes with honest, evidence-based accessibility.</p></div>
+  </div>
+</section>
+
+<section class="section" id="live" style="background:var(--bg-2)">
+  <span class="section-eyebrow">Live intelligence</span>
+  <h2>Truthful, sourced, time-stamped.</h2>
+  <p class="section-lead">Every external data item shows its source, timestamp and age. When a feed is unavailable we say so — we never silently substitute fake data. An earthquake event alone never implies building damage: damage only appears when real analysis and evidence exist.</p>
+  <div class="feature-grid" style="margin-top:28px">
+    <div class="card card-pad"><div class="source-name"><span class="dot dot-green pulse"></span> USGS Earthquakes</div><p style="color:var(--muted);margin-top:8px;font-size:13px">Magnitude, depth, location and coordinates from the public USGS feed.</p></div>
+    <div class="card card-pad"><div class="source-name"><span class="dot dot-amber"></span> GDACS / NASA EONET</div><p style="color:var(--muted);margin-top:8px;font-size:13px">Free public active-fire alerts with no paid API key required.</p></div>
+    <div class="card card-pad"><div class="source-name"><span class="dot dot-green pulse"></span> OpenStreetMap</div><p style="color:var(--muted);margin-top:8px;font-size:13px">Free base mapping. Google Maps is supported as an optional add-on.</p></div>
+  </div>
+</section>
+
+<section class="section" id="about">
+  <span class="section-eyebrow">Responsible AI</span>
+  <h2>AI assists responders. It does not replace them.</h2>
+  <div class="responsible-note" style="margin-top:20px;max-width:760px">
+    <i class="fa-solid fa-shield-halved"></i>
+    <span>AI-generated findings are decision-support signals and must be verified against available evidence and official field assessment. RESQAI makes no claim of guaranteed detection or fully autonomous response.</span>
+  </div>
+  <div class="hero-actions" style="margin-top:36px">
+    <a href="/register/" class="btn btn-primary" data-testid="cta-register">Get started</a>
+    <a href="/login/" class="btn btn-ghost" data-testid="cta-login">Sign in</a>
+  </div>
+</section>
+{% endblock %}
+{% block extra_js %}
+<script>
+  if (window.RESQAI && window.RESQAI.Auth && window.RESQAI.Auth.isAuthed()) {
+    // already logged in — offer dashboard quickly
+  }
+</script>
+{% endblock %}

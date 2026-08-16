@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Response Management | RESQAI{% endblock %}
+{% block breadcrumbs %}<span class="sep">/</span><span>Dashboard</span><span class="sep">/</span><span class="current">Response Management</span>{% endblock %}
+
+{% block content %}
+<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px">
+  <div>
+    <div class="page-title">Response management</div>
+    <div class="page-desc">Track and update the status of every response assignment.</div>
+  </div>
+  <div class="filter-bar" style="margin:0">
+    <select class="select" id="f-status" data-testid="filter-status"><option value="">All statuses</option><option value="assigned">Assigned</option><option value="in_progress">In Progress</option><option value="completed">Completed</option></select>
+    <button class="btn btn-ghost btn-sm" id="refresh-btn" data-testid="mgmt-refresh"><i class="fa-solid fa-rotate"></i> Refresh</button>
+  </div>
+</div>
+
+<div class="grid grid-3" id="stat-row" style="margin-bottom:16px">
+  <div class="card metric-card"><div class="metric-label">Assigned</div><div class="metric-value" id="c-assigned">—</div></div>
+  <div class="card metric-card"><div class="metric-label">In Progress</div><div class="metric-value" id="c-progress">—</div></div>
+  <div class="card metric-card"><div class="metric-label">Completed</div><div class="metric-value" id="c-completed">—</div></div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h3>Assignments</h3></div>
+  <div class="card-pad" id="assign-table" data-testid="assign-table"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.RESQAI_PAGE_INIT = function () {
+  const R = window.RESQAI;
+  let all = [];
+
+  async function load() {
+    const el = document.getElementById("assign-table");
+    el.innerHTML = R.loadingBlock(4);
+    try {
+      all = await R.API.get("/responses/assignments/");
+      document.getElementById("c-assigned").textContent = all.filter(a => a.status==="assigned").length;
+      document.getElementById("c-progress").textContent = all.filter(a => a.status==="in_progress").length;
+      document.getElementById("c-completed").textContent = all.filter(a => a.status==="completed").length;
+      render();
+    } catch (e) { el.innerHTML = R.errorState(e.detail); }
+  }
+
+  function render() {
+    const f = document.getElementById("f-status").value;
+    const list = all.filter(a => !f || a.status === f);
+    const el = document.getElementById("assign-table");
+    if (!list.length) { el.innerHTML = R.emptyState("No assignments", "Create assignments in Response Coordination.", "fa-list-check"); return; }
+    el.innerHTML = '<div class="table-wrap"><table class="table table-responsive"><thead><tr><th>ID</th><th>Task</th><th>Responder</th><th>Incident</th><th>Priority</th><th>Status</th><th>Update</th></tr></thead><tbody>' +
+      list.map(a => `<tr data-testid="assign-row-${a.id}">
+        <td data-label="ID"><span class="mono-code">${a.assignment_code}</span></td>
+        <td data-label="Task">${R.escapeHtml(a.task)}</td>
+        <td data-label="Responder">${R.escapeHtml(a.responder_name||'—')}</td>
+        <td data-label="Incident">${R.escapeHtml(a.disaster_name)}</td>
+        <td data-label="Priority">${R.severityBadge(a.priority)}</td>
+        <td data-label="Status">${R.statusBadge(a.status)}</td>
+        <td data-label="Update"><select class="select" data-id="${a.id}" data-testid="status-select-${a.id}" style="padding:6px 10px">
+          <option value="assigned" ${a.status==='assigned'?'selected':''}>Assigned</option>
+          <option value="in_progress" ${a.status==='in_progress'?'selected':''}>In Progress</option>
+          <option value="completed" ${a.status==='completed'?'selected':''}>Completed</option>
+        </select></td></tr>`).join("") + '</tbody></table></div>';
+    el.querySelectorAll("select[data-id]").forEach(sel => sel.addEventListener("change", async () => {
+      try { await R.API.patch("/responses/assignments/" + sel.dataset.id + "/", { status: sel.value });
+        R.Toast.success("Status updated.", "Assignment set to " + R.titleCase(sel.value)); load();
+      } catch (e) { R.Toast.error("Could not update", e.detail); }
+    }));
+  }
+
+  load();
+  document.getElementById("f-status").addEventListener("change", render);
+  document.getElementById("refresh-btn").addEventListener("click", load);
+};
+</script>
+{% endblock %}

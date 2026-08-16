@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Create Disaster | RESQAI{% endblock %}
+{% block breadcrumbs %}<span class="sep">/</span><span>Dashboard</span><span class="sep">/</span><span class="current">Create Disaster</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-title">Create disaster incident</div>
+  <div class="page-desc">Register an operator-tracked incident. This is your record — not external live-feed data.</div>
+</div>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-head"><h3>Incident details</h3></div>
+    <div class="card-pad">
+      <form id="disaster-form" data-testid="create-disaster-form">
+        <div class="form-row">
+          <label class="field-label" for="name">Name</label>
+          <input class="input" id="name" required placeholder="e.g. Coastal District Flood" data-testid="disaster-name" />
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <label class="field-label" for="disaster_type">Disaster type</label>
+            <select class="select" id="disaster_type" data-testid="disaster-type">
+              <option value="flood">Flood</option><option value="cyclone">Cyclone</option>
+              <option value="earthquake">Earthquake</option><option value="fire">Fire</option>
+              <option value="landslide">Landslide</option><option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="field-label" for="severity">Severity</label>
+            <select class="select" id="severity" data-testid="disaster-severity">
+              <option value="low">Low</option><option value="medium" selected>Medium</option>
+              <option value="high">High</option><option value="critical">Critical</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="field-label" for="location">Location</label>
+          <input class="input" id="location" required placeholder="Ward / district / landmark" data-testid="disaster-location" />
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <label class="field-label" for="latitude">Latitude</label>
+            <input class="input" id="latitude" type="number" step="any" required placeholder="19.0760" data-testid="disaster-lat" />
+          </div>
+          <div class="form-row">
+            <label class="field-label" for="longitude">Longitude</label>
+            <input class="input" id="longitude" type="number" step="any" required placeholder="72.8777" data-testid="disaster-lng" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="field-label" for="affected_population">Affected population (if known)</label>
+          <input class="input" id="affected_population" type="number" min="0" placeholder="Optional" data-testid="disaster-population" />
+        </div>
+        <div class="form-row">
+          <label class="field-label" for="description">Description</label>
+          <textarea class="textarea" id="description" placeholder="Situation summary…" data-testid="disaster-description"></textarea>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button type="submit" class="btn btn-primary" id="submit-btn" data-testid="disaster-submit"><i class="fa-solid fa-circle-plus"></i> Create incident</button>
+          <button type="button" class="btn btn-ghost" id="pin-map" data-testid="pin-map"><i class="fa-solid fa-crosshairs"></i> Pick on map</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Location preview</h3><span class="sub">Click the map to set coordinates</span></div>
+    <div class="map-panel" style="height:420px"><div id="map" class="map-el"></div></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.RESQAI_PAGE_INIT = function () {
+  const R = window.RESQAI, M = R.MapManager;
+  let marker = null;
+  if (M.init("map", [20, 78], 4)) {
+    setTimeout(() => M.map.invalidateSize(), 150);
+    M.map.on("click", (e) => setCoords(e.latlng.lat, e.latlng.lng));
+  }
+  function setCoords(lat, lng) {
+    document.getElementById("latitude").value = lat.toFixed(5);
+    document.getElementById("longitude").value = lng.toFixed(5);
+    if (marker) M.map.removeLayer(marker);
+    marker = L.marker([lat, lng]).addTo(M.map);
+  }
+  document.getElementById("pin-map").addEventListener("click", () => R.Toast.info("Pick on map", "Click anywhere on the map to set latitude and longitude."));
+
+  document.getElementById("disaster-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("submit-btn");
+    const payload = {
+      name: document.getElementById("name").value.trim(),
+      disaster_type: document.getElementById("disaster_type").value,
+      severity: document.getElementById("severity").value,
+      location: document.getElementById("location").value.trim(),
+      latitude: parseFloat(document.getElementById("latitude").value),
+      longitude: parseFloat(document.getElementById("longitude").value),
+      description: document.getElementById("description").value.trim(),
+    };
+    const pop = document.getElementById("affected_population").value;
+    if (pop) payload.affected_population = parseInt(pop, 10);
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Creating…';
+    try {
+      const d = await R.API.post("/disasters/", payload);
+      R.Toast.success("Incident created successfully.", d.incident_code + " · " + d.name);
+      setTimeout(() => location.href = "/disaster-details/?id=" + d.id, 500);
+    } catch (err) {
+      R.Toast.error("Could not create incident", err.detail);
+      btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-circle-plus"></i> Create incident';
+    }
+  });
+};
+</script>
+{% endblock %}

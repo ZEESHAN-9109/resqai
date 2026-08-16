@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Verification | RESQAI{% endblock %}
+{% block breadcrumbs %}<span class="sep">/</span><span>Dashboard</span><span class="sep">/</span><span class="current">Verification Center</span>{% endblock %}
+
+{% block content %}
+<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px">
+  <div>
+    <div class="page-title">Verification center</div>
+    <div class="page-desc"><span id="queue-count">0</span> findings require verification. Nothing is ever auto-marked as verified.</div>
+  </div>
+  <button class="btn btn-ghost btn-sm" id="refresh-btn" data-testid="verification-refresh"><i class="fa-solid fa-rotate"></i> Refresh</button>
+</div>
+
+<div id="queue" data-testid="verification-queue"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.RESQAI_PAGE_INIT = function () {
+  const R = window.RESQAI;
+  const TYPES = [["damaged_building","Damaged Building"],["blocked_road","Blocked Road"],["service_disruption","Service Disruption"],["other","Other"]];
+
+  async function load() {
+    const el = document.getElementById("queue");
+    el.innerHTML = R.loadingBlock(4);
+    try {
+      const list = await R.API.get("/verification/queue/");
+      document.getElementById("queue-count").textContent = list.length;
+      if (!list.length) { el.innerHTML = R.emptyState("No verification tasks", "All findings have been reviewed.", "fa-clipboard-check"); return; }
+      el.innerHTML = '<div class="grid grid-2">' + list.map(cardHtml).join("") + '</div>';
+      list.forEach(bind);
+    } catch (e) { el.innerHTML = R.errorState(e.detail); }
+  }
+
+  const TYPE_ICON = { damaged_building: "fa-building-circle-exclamation", blocked_road: "fa-road-barrier", service_disruption: "fa-plug-circle-xmark", other: "fa-circle-info" };
+
+  function cardHtml(f) {
+    return `<div class="card" data-testid="verify-card-${f.id}">
+      ${f.image_url ? `<img src="${f.image_url}" style="width:100%;height:150px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0" onerror="this.style.display='none'"/>` : ''}
+      <div class="card-pad">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div><span class="mono-code">${f.finding_code}</span> <i class="fa-solid ${TYPE_ICON[f.finding_type]||'fa-circle'}"></i>
+          <div style="font-weight:700;margin-top:2px">${R.escapeHtml(f.label)}</div>
+          <div style="font-size:12.5px;color:var(--muted)">${R.escapeHtml(f.disaster_name)} · ${R.escapeHtml(f.location_hint||'')}</div></div>
+          <span class="badge neutral">${R.confidencePct(f.confidence)}%</span>
+        </div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:10px"><strong style="color:var(--text)">Evidence:</strong> ${R.escapeHtml(f.evidence||'—')}</div>
+        <div class="confidence-row" style="margin-top:9px"><div class="confidence-bar" style="flex:1"><div class="confidence-fill" style="width:${R.confidencePct(f.confidence)}%"></div></div></div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-success btn-sm" data-act="confirm" data-id="${f.id}" data-testid="confirm-${f.id}"><i class="fa-solid fa-check"></i> Confirm</button>
+          <button class="btn btn-sm" data-act="correct" data-id="${f.id}" data-testid="correct-${f.id}"><i class="fa-solid fa-pen"></i> Correct</button>
+          <button class="btn btn-danger btn-sm" data-act="reject" data-id="${f.id}" data-testid="reject-${f.id}"><i class="fa-solid fa-xmark"></i> Reject</button>
+        </div>
+      </div></div>`;
+  }
+
+  function bind(f) {
+    document.querySelectorAll(`[data-id="${f.id}"]`).forEach(btn => btn.addEventListener("click", () => {
+      const act = btn.dataset.act;
+      if (act === "correct") openCorrect(f);
+      else submit(f.id, { action: act });
+    }));
+  }
+
+  function openCorrect(f) {
+    const body = `
+      <div class="form-row"><label class="field-label">Correct classification</label>
+      <select class="select" id="correct-class" data-testid="correct-classification">${TYPES.map(([v,l]) => `<option value="${v}" ${v===f.finding_type?'selected':''}>${l}</option>`).join("")}</select></div>
+      <div class="form-row"><label class="field-label">Reason</label><input class="input" id="correct-reason" placeholder="Why is the original classification wrong?" data-testid="correct-reason" /></div>
+      <div class="form-row"><label class="field-label">Notes</label><textarea class="textarea" id="correct-notes" placeholder="Additional context…" data-testid="correct-notes"></textarea></div>`;
+    const foot = `<button class="btn btn-ghost" onclick="RESQAI.closeModal()">Cancel</button><button class="btn btn-primary" id="save-correct" data-testid="save-correction">Save correction</button>`;
+    R.openModal("Correct finding " + f.finding_code, body, foot);
+    document.getElementById("save-correct").addEventListener("click", () => submit(f.id, {
+      action: "correct",
+      correct_classification: document.getElementById("correct-class").value,
+      reason: document.getElementById("correct-reason").value,
+      notes: document.getElementById("correct-notes").value,
+    }));
+  }
+
+  async function submit(id, payload) {
+    try {
+      await R.API.post("/verification/" + id + "/", payload);
+      R.closeModal();
+      R.Toast.success("Verification recorded.", "Finding " + payload.action + "ed.");
+      load();
+    } catch (e) { R.Toast.error("Could not record verification", e.detail); }
+  }
+
+  load();
+  document.getElementById("refresh-btn").addEventListener("click", load);
+};
+</script>
+{% endblock %}

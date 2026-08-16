@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Route Planner | RESQAI{% endblock %}
+{% block breadcrumbs %}<span class="sep">/</span><span>Dashboard</span><span class="sep">/</span><span class="current">Route Planner</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-title">Route planner</div>
+  <div class="page-desc">Plan a real road route using the free OpenStreetMap/OSRM service, then check it against incident evidence before dispatch.</div>
+</div>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-head"><h3>Plan a route</h3></div>
+    <div class="card-pad">
+      <form id="route-form" data-testid="route-form">
+        <div class="form-row"><label class="field-label">Disaster</label><select class="select" id="r-disaster" data-testid="route-disaster"></select></div>
+        <div class="form-row"><label class="field-label">Starting location</label><input class="input" id="start_location" placeholder="e.g. Command Post" data-testid="route-start" /></div>
+        <div class="form-grid">
+          <div class="form-row"><label class="field-label">Start latitude</label><input class="input" type="number" step="any" id="start_lat" data-testid="route-start-lat" /></div>
+          <div class="form-row"><label class="field-label">Start longitude</label><input class="input" type="number" step="any" id="start_lng" data-testid="route-start-lng" /></div>
+        </div>
+        <div class="form-row"><label class="field-label">Destination</label><input class="input" id="dest_location" placeholder="e.g. Affected zone" data-testid="route-dest" /></div>
+        <div class="form-grid">
+          <div class="form-row"><label class="field-label">Destination latitude</label><input class="input" type="number" step="any" id="dest_lat" data-testid="route-dest-lat" /></div>
+          <div class="form-row"><label class="field-label">Destination longitude</label><input class="input" type="number" step="any" id="dest_lng" data-testid="route-dest-lng" /></div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button type="submit" class="btn btn-primary" id="plan-btn" data-testid="route-submit"><i class="fa-solid fa-route"></i> Plan route</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="use-incident">Use selected incident</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="use-location"><i class="fa-solid fa-location-crosshairs"></i> Use my location</button>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:10px">Tip: click the map to set start, then again to set destination.</div>
+      </form>
+      <div id="route-result" style="margin-top:16px"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Route preview</h3></div>
+    <div class="map-panel" style="height:460px"><div id="map" class="map-el"></div></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.RESQAI_PAGE_INIT = function () {
+  const R = window.RESQAI, M = R.MapManager;
+  let clickCount = 0, disasters = [];
+  if (M.init("map", [20, 78], 4)) {
+    setTimeout(() => M.map.invalidateSize(), 150);
+    M.map.on("click", (e) => {
+      if (clickCount % 2 === 0) { document.getElementById("start_lat").value = e.latlng.lat.toFixed(5); document.getElementById("start_lng").value = e.latlng.lng.toFixed(5); }
+      else { document.getElementById("dest_lat").value = e.latlng.lat.toFixed(5); document.getElementById("dest_lng").value = e.latlng.lng.toFixed(5); }
+      clickCount++;
+    });
+  }
+
+  function useIncidentAsDestination() {
+    const d = disasters.find(x => String(x.id) === document.getElementById("r-disaster").value);
+    if (d) {
+      document.getElementById("dest_lat").value = d.latitude;
+      document.getElementById("dest_lng").value = d.longitude;
+      document.getElementById("dest_location").value = d.location;
+    }
+  }
+
+  async function init() {
+    try {
+      disasters = await R.API.get("/disasters/");
+      const ds = document.getElementById("r-disaster");
+      ds.innerHTML = disasters.length
+        ? disasters.map(d => `<option value="${d.id}">${d.incident_code} · ${R.escapeHtml(d.name)}</option>`).join("")
+        : '<option value="">No incidents</option>';
+      const pre = R.qp("disaster");
+      if (pre) ds.value = pre;
+      useIncidentAsDestination();
+      ds.addEventListener("change", useIncidentAsDestination);
+    } catch (e) { R.Toast.error("Could not load incidents", e.detail); }
+  }
+
+  document.getElementById("use-incident").addEventListener("click", useIncidentAsDestination);
+
+  document.getElementById("use-location").addEventListener("click", () => {
+    if (!navigator.geolocation) {
+      R.Toast.warning("Location unavailable", "Enter the command-post coordinates manually.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        document.getElementById("start_lat").value = pos.coords.latitude.toFixed(5);
+        document.getElementById("start_lng").value = pos.coords.longitude.toFixed(5);
+        document.getElementById("start_location").value = "My current location";
+        R.Toast.success("Start location set", "Your current coordinates are ready for route planning.");
+      },
+      () => R.Toast.warning("Location permission denied", "Enter the start coordinates manually."),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  });
+
+  const STATUS_CLASS = { passable: "low", obstruction: "high", blocked: "critical", unavailable: "neutral" };
+
+  document.getElementById("route-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      disaster: document.getElementById("r-disaster").value,
+      start_location: document.getElementById("start_location").value,
+      start_lat: document.getElementById("start_lat").value,
+      start_lng: document.getElementById("start_lng").value,
+      dest_location: document.getElementById("dest_location").value,
+      dest_lat: document.getElementById("dest_lat").value,
+      dest_lng: document.getElementById("dest_lng").value,
+    };
+    if (!payload.disaster || !payload.start_lat || !payload.dest_lat) { R.Toast.warning("Missing coordinates", "Set start and destination coordinates."); return; }
+    const btn = document.getElementById("plan-btn"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Planning…';
+    try {
+      const rt = await R.API.post("/routes/plan/", payload);
+      document.getElementById("route-result").innerHTML = `
+        <div class="card card-pad">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span class="mono-code">${rt.route_code}</span><span class="badge ${STATUS_CLASS[rt.route_status]}">${R.escapeHtml(rt.route_status_display)}</span></div>
+          <div class="grid grid-2" style="margin-top:12px">
+            <div><div class="metric-label">Distance</div><div style="font-family:var(--font-head);font-size:20px">${rt.distance_km} km</div></div>
+            <div><div class="metric-label">Estimated time</div><div style="font-family:var(--font-head);font-size:20px">${rt.est_minutes} min</div></div>
+          </div>
+          <div class="section-title" style="margin-top:14px">Blocked roads on record</div>
+          ${rt.blocked_roads.length ? rt.blocked_roads.map(b => `<div class="badge critical" style="margin:2px">${R.escapeHtml(b)}</div>`).join("") : '<span style="color:var(--muted)">None recorded.</span>'}
+          <div class="responsible-note" style="margin-top:14px"><i class="fa-solid fa-triangle-exclamation"></i><span>${R.escapeHtml(rt.explanation)}</span></div>
+        </div>`;
+      M.clear("route");
+      const color = rt.route_status === "blocked" ? "#ef5350" : rt.route_status === "obstruction" ? "#f2a63b" : "#35c98a";
+      M.drawRoute([[+payload.start_lat, +payload.start_lng], [+payload.dest_lat, +payload.dest_lng]], color);
+      M.addMarker("team", +payload.start_lat, +payload.start_lng, "Start: " + R.escapeHtml(payload.start_location||''));
+      M.addMarker("incident", +payload.dest_lat, +payload.dest_lng, "Destination: " + R.escapeHtml(payload.dest_location||''));
+      R.Toast.success("Route planned.", rt.route_code + " · " + rt.route_status_display);
+    } catch (err) { R.Toast.error("Could not plan route", err.detail); }
+    finally { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-route"></i> Plan route'; }
+  });
+
+  init();
+};
+</script>
+{% endblock %}

@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Image Analysis | RESQAI{% endblock %}
+{% block breadcrumbs %}<span class="sep">/</span><span>Dashboard</span><span class="sep">/</span><span class="current">Image Analysis</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-title">Image analysis</div>
+  <div class="page-desc">Upload post-disaster imagery. Vision AI flags potential damage as decision-support signals with confidence.</div>
+</div>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-head"><h3>Analyse imagery</h3></div>
+    <div class="card-pad">
+      <div class="form-row">
+        <label class="field-label" for="disaster-select">Disaster incident</label>
+        <select class="select" id="disaster-select" data-testid="analysis-disaster-select"><option value="">Loading incidents…</option></select>
+      </div>
+
+      <div id="dropzone" data-testid="dropzone" style="border:2px dashed var(--border-strong);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:border-color .16s">
+        <div style="font-size:30px;color:var(--muted)"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+        <div style="margin-top:10px;font-weight:600">Drag &amp; drop or click to upload</div>
+        <div style="color:var(--muted);font-size:12.5px;margin-top:4px">JPG, PNG or WEBP · max 10 MB</div>
+        <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" hidden />
+      </div>
+
+      <div id="preview-wrap" style="display:none;margin-top:16px">
+        <div class="card card-pad" style="display:flex;gap:14px;align-items:center">
+          <img id="preview-img" style="width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--border)" />
+          <div style="flex:1;min-width:0">
+            <div id="file-name" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+            <div id="file-size" style="color:var(--muted);font-size:12.5px;margin-top:3px"></div>
+          </div>
+          <button class="icon-btn" id="remove-img" data-testid="remove-image" title="Remove"><i class="fa-solid fa-trash"></i></button>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-block" id="analyze-btn" style="margin-top:16px" disabled data-testid="analyze-button"><i class="fa-solid fa-microchip"></i> Analyze image</button>
+
+      <div class="responsible-note" style="margin-top:16px">
+        <i class="fa-solid fa-shield-halved"></i>
+        <span>Findings are decision-support signals and must be verified against evidence and official field assessment.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>Analysis result</h3><span class="sub" id="result-code"></span></div>
+    <div class="card-pad" id="result-panel">
+      <div class="empty-state"><div class="icon"><i class="fa-solid fa-image"></i></div><h4>No analysis yet</h4><p>Select an incident and upload an image to begin.</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><h3>Recent analyses</h3></div>
+  <div class="card-pad" id="recent-analyses"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.RESQAI_PAGE_INIT = function () {
+  const R = window.RESQAI;
+  let file = null;
+  const dz = document.getElementById("dropzone");
+  const fi = document.getElementById("file-input");
+
+  async function loadDisasters() {
+    try {
+      const list = await R.API.get("/disasters/");
+      const sel = document.getElementById("disaster-select");
+      if (!list.length) { sel.innerHTML = '<option value="">No incidents — create one first</option>'; return; }
+      sel.innerHTML = '<option value="">Select an incident…</option>' + list.map(d => `<option value="${d.id}">${d.incident_code} · ${R.escapeHtml(d.name)}</option>`).join("");
+      const pre = R.qp("disaster"); if (pre) sel.value = pre;
+    } catch (e) { R.Toast.error("Could not load incidents", e.detail); }
+  }
+
+  function humanSize(b) { return b < 1024*1024 ? (b/1024).toFixed(0)+" KB" : (b/1024/1024).toFixed(2)+" MB"; }
+
+  function setFile(f) {
+    if (!f) return;
+    if (!["image/jpeg","image/png","image/webp"].includes(f.type)) { R.Toast.error("Unsupported file", "Use JPG, PNG or WEBP."); return; }
+    if (f.size > 10*1024*1024) { R.Toast.error("File too large", "Maximum size is 10 MB."); return; }
+    file = f;
+    document.getElementById("preview-img").src = URL.createObjectURL(f);
+    document.getElementById("file-name").textContent = f.name;
+    document.getElementById("file-size").textContent = humanSize(f.size) + " · " + f.type.split("/")[1].toUpperCase();
+    document.getElementById("preview-wrap").style.display = "block";
+    document.getElementById("analyze-btn").disabled = false;
+  }
+  function clearFile() { file = null; fi.value = ""; document.getElementById("preview-wrap").style.display = "none"; document.getElementById("analyze-btn").disabled = true; }
+
+  dz.addEventListener("click", () => fi.click());
+  dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.style.borderColor = "var(--blue)"; });
+  dz.addEventListener("dragleave", () => dz.style.borderColor = "var(--border-strong)");
+  dz.addEventListener("drop", (e) => { e.preventDefault(); dz.style.borderColor = "var(--border-strong)"; setFile(e.dataTransfer.files[0]); });
+  fi.addEventListener("change", (e) => setFile(e.target.files[0]));
+  document.getElementById("remove-img").addEventListener("click", clearFile);
+
+  document.getElementById("analyze-btn").addEventListener("click", async () => {
+    const disasterId = document.getElementById("disaster-select").value;
+    if (!disasterId) { R.Toast.warning("Select an incident", "Choose which incident this image belongs to."); return; }
+    if (!file) return;
+    const btn = document.getElementById("analyze-btn");
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Analyzing imagery…';
+    document.getElementById("result-panel").innerHTML = '<div style="text-align:center;padding:40px"><span class="spinner lg"></span><div style="margin-top:14px;color:var(--muted)">Vision AI is examining the image…</div></div>';
+    const fd = new FormData();
+    fd.append("image", file);
+    fd.append("disaster_id", disasterId);
+    try {
+      const res = await R.API.postForm("/images/analyze/", fd);
+      renderResult(res);
+      loadRecent();
+      if (res.status === "completed") R.Toast.success("Analysis complete", res.analysis_code + " · " + res.findings.length + " findings");
+      else R.Toast.error("Analysis unavailable", res.error || "AI service error.");
+    } catch (err) { R.Toast.error("Analysis failed", err.detail); document.getElementById("result-panel").innerHTML = R.errorState(err.detail); }
+    finally { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-microchip"></i> Analyze image'; }
+  });
+
+  const TYPE_ICON = { damaged_building: "fa-building-circle-exclamation", blocked_road: "fa-road-barrier", service_disruption: "fa-plug-circle-xmark", other: "fa-circle-info" };
+
+  function renderResult(res) {
+    document.getElementById("result-code").textContent = res.analysis_code;
+    if (res.status !== "completed") { document.getElementById("result-panel").innerHTML = R.errorState(res.error || "Analysis could not be completed."); return; }
+    const c = res.counts || {};
+    let html = `
+      <div class="confidence-row" style="margin-bottom:14px">
+        <div style="flex:1"><div class="section-title" style="margin-bottom:6px">Overall confidence</div>
+        <div class="confidence-bar"><div class="confidence-fill" style="width:${R.confidencePct(res.overall_confidence)}%"></div></div></div>
+        <div class="val" style="font-size:18px;font-family:var(--font-head);min-width:52px">${R.confidencePct(res.overall_confidence)}%</div>
+      </div>
+      ${res.summary ? `<p style="color:var(--muted);margin-bottom:14px">${R.escapeHtml(res.summary)}</p>` : ''}
+      <div class="grid grid-3" style="margin-bottom:16px">
+        <div class="card card-pad" style="text-align:center"><div class="metric-value" style="font-size:24px">${c.damaged_buildings||0}</div><div class="metric-label">Damaged buildings</div></div>
+        <div class="card card-pad" style="text-align:center"><div class="metric-value" style="font-size:24px">${c.blocked_roads||0}</div><div class="metric-label">Blocked routes</div></div>
+        <div class="card card-pad" style="text-align:center"><div class="metric-value" style="font-size:24px">${c.service_disruptions||0}</div><div class="metric-label">Service disruptions</div></div>
+      </div>
+      <div class="section-title">Findings</div>`;
+    if (!res.findings.length) html += R.emptyState("No reliable findings", "The model did not detect clear damage signals.", "fa-magnifying-glass");
+    else html += res.findings.map(f => `
+      <div class="card evidence-card" style="margin-bottom:10px" data-testid="finding-${f.id}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div><span class="mono-code">${f.finding_code}</span> <i class="fa-solid ${TYPE_ICON[f.finding_type]||'fa-circle'}"></i> <strong>${R.escapeHtml(f.label)}</strong>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:3px">${R.escapeHtml(f.location_hint||'')}</div></div>
+          ${R.verifBadge(f.verification_status)}
+        </div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:8px"><strong style="color:var(--text)">Evidence:</strong> ${R.escapeHtml(f.evidence||'—')}</div>
+        <div class="confidence-row" style="margin-top:9px"><div class="confidence-bar" style="flex:1"><div class="confidence-fill" style="width:${R.confidencePct(f.confidence)}%"></div></div><span class="val">${R.confidencePct(f.confidence)}%</span></div>
+      </div>`).join("");
+    html += `<a href="/verification/" class="btn btn-ghost btn-block" style="margin-top:8px"><i class="fa-solid fa-user-check"></i> Send to verification</a>`;
+    document.getElementById("result-panel").innerHTML = html;
+  }
+
+  async function loadRecent() {
+    const el = document.getElementById("recent-analyses");
+    try {
+      const list = await R.API.get("/images/analyses/");
+      if (!list.length) { el.innerHTML = R.emptyState("No analyses yet", "Uploaded analyses appear here.", "fa-images"); return; }
+      el.innerHTML = '<div class="table-wrap"><table class="table table-responsive"><thead><tr><th>ID</th><th>Incident</th><th>Confidence</th><th>Findings</th><th>When</th></tr></thead><tbody>' +
+        list.map(a => `<tr>
+          <td data-label="ID"><span class="mono-code">${a.analysis_code}</span></td>
+          <td data-label="Incident">${R.escapeHtml(a.disaster_name)}</td>
+          <td data-label="Confidence">${R.confidencePct(a.overall_confidence)}%</td>
+          <td data-label="Findings">${a.findings.length}</td>
+          <td data-label="When">${R.timeAgo(a.created_at)}</td></tr>`).join("") + '</tbody></table></div>';
+    } catch (e) { el.innerHTML = R.errorState(e.detail); }
+  }
+
+  loadDisasters(); loadRecent();
+};
+</script>
+{% endblock %}

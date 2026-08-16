@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Live Situation | RESQAI{% endblock %}
+{% block breadcrumbs %}<span class="sep">/</span><span>Dashboard</span><span class="sep">/</span><span class="current">Live Situation</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-title">Live situation</div>
+  <div class="page-desc">Operator incidents plus real-time public feeds. Every external item shows source, timestamp and data age.</div>
+</div>
+
+<div class="grid grid-2" style="margin-bottom:18px">
+  <div class="card">
+    <div class="card-head"><h3><span class="dot dot-amber"></span> USGS earthquakes (public feed)</h3><span class="sub" id="eq-status">Connecting…</span></div>
+    <div class="card-pad" id="eq-list"></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3><span class="dot dot-red"></span> Free live India fire alerts</h3><span class="sub" id="fire-status">Connecting…</span></div>
+    <div class="card-pad" id="fire-list"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h3>Incident feed</h3>
+    <button class="btn btn-ghost btn-sm" id="refresh-btn" data-testid="live-refresh"><i class="fa-solid fa-rotate"></i> Refresh <span id="feed-updated" style="color:var(--muted-2);margin-left:6px"></span></button>
+  </div>
+  <div class="card-pad">
+    <div class="filter-bar">
+      <select class="select" id="f-type" data-testid="filter-type"><option value="">All types</option><option value="flood">Flood</option><option value="cyclone">Cyclone</option><option value="earthquake">Earthquake</option><option value="fire">Fire</option><option value="landslide">Landslide</option><option value="other">Other</option></select>
+      <select class="select" id="f-sev" data-testid="filter-severity"><option value="">All severities</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select>
+      <select class="select" id="f-status" data-testid="filter-status"><option value="">All statuses</option><option value="active">Active</option><option value="monitoring">Monitoring</option><option value="resolved">Resolved</option></select>
+      <input class="input" id="f-loc" placeholder="Search location…" data-testid="filter-location" />
+    </div>
+    <div id="incident-feed" data-testid="incident-feed"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.RESQAI_PAGE_INIT = function () {
+  const R = window.RESQAI;
+  let all = [];
+
+  async function loadIncidents() {
+    const el = document.getElementById("incident-feed");
+    el.innerHTML = R.loadingBlock(4);
+    try {
+      all = await R.API.get("/situations/live/");
+      applyFilters();
+      document.getElementById("feed-updated").textContent = "· " + new Date().toLocaleTimeString();
+    } catch (e) { el.innerHTML = R.errorState(e.detail); }
+  }
+
+  function applyFilters() {
+    const t = document.getElementById("f-type").value;
+    const s = document.getElementById("f-sev").value;
+    const st = document.getElementById("f-status").value;
+    const loc = document.getElementById("f-loc").value.toLowerCase();
+    let list = all.filter(d =>
+      (!t || d.disaster_type === t) && (!s || d.severity === s) &&
+      (!st || d.status === st) && (!loc || (d.location || "").toLowerCase().includes(loc)));
+    const el = document.getElementById("incident-feed");
+    if (!list.length) { el.innerHTML = R.emptyState("No active incidents", "No incidents match the current filters.", "fa-clipboard-list"); return; }
+    el.innerHTML = '<div class="grid grid-2">' + list.map(d => `
+      <div class="card incident-card" onclick="location.href='/disaster-details/?id=${d.id}'" data-testid="incident-${d.id}">
+        <div class="incident-top">
+          <div><div class="incident-code">${d.incident_code}</div><div class="incident-name">${R.escapeHtml(d.name)}</div></div>
+          ${R.severityBadge(d.severity)}
+        </div>
+        <div class="incident-meta">
+          <span><i class="fa-solid fa-fire"></i> ${R.titleCase(d.disaster_type)}</span>
+          <span><i class="fa-solid fa-location-dot"></i> ${R.escapeHtml(d.location)}</span>
+          <span class="mono">${(d.latitude||0).toFixed(3)}, ${(d.longitude||0).toFixed(3)}</span>
+          ${R.statusBadge(d.status)}
+        </div>
+        <div class="incident-meta">
+          ${d.affected_population != null ? `<span><i class="fa-solid fa-people-roof"></i> ${R.fmtNum(d.affected_population)} affected</span>` : ''}
+          <span><i class="fa-solid fa-flask"></i> ${d.findings_count} findings</span>
+          <span><i class="fa-regular fa-calendar"></i> ${new Date(d.created_at).toLocaleDateString()}</span>
+          <span style="color:var(--muted-2)">Updated ${R.timeAgo(d.updated_at)}</span>
+        </div>
+        <div style="margin-top:12px"><span class="btn btn-ghost btn-sm">View details <i class="fa-solid fa-arrow-right"></i></span></div>
+      </div>`).join("") + '</div>';
+  }
+
+  function renderEarthquakes(d) {
+    const st = document.getElementById("eq-status");
+    const el = document.getElementById("eq-list");
+    if (d.status !== "connected") {
+      st.innerHTML = R.LiveData.connBadge(d.status, d.connection);
+      el.innerHTML = R.emptyState("Live earthquake data unavailable", d.message || "The USGS feed could not be reached.", "fa-satellite-dish");
+      return;
+    }
+    st.innerHTML = R.LiveData.connBadge(d.status, d.connection) + ' · updated ' + R.timeAgo(d.last_updated);
+    const events = (d.events || []).slice(0, 6);
+    if (!events.length) { el.innerHTML = R.emptyState("No recent earthquakes", "No events in the last 24 hours.", "fa-wave-square"); return; }
+    el.innerHTML = events.map(e => `
+      <div class="card card-pad" style="margin-bottom:9px" data-testid="eq-event">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div><div style="font-family:var(--font-head);font-size:18px;font-weight:800">M ${e.magnitude ?? '—'}</div>
+          <div style="font-size:13px;margin-top:2px">${R.escapeHtml(e.location || 'Unknown location')}</div></div>
+          <span class="demo-flag">USGS</span>
+        </div>
+        <div class="incident-meta" style="margin-top:8px">
+          <span>Depth ${e.depth_km != null ? e.depth_km.toFixed(0)+' km' : '—'}</span>
+          <span class="mono">${(e.latitude||0).toFixed(2)}, ${(e.longitude||0).toFixed(2)}</span>
+          <span style="color:var(--muted-2)">Detected ${R.timeAgo(e.time_iso)}</span>
+        </div>
+      </div>`).join("");
+  }
+
+  function renderFires(d) {
+    const st = document.getElementById("fire-status");
+    const el = document.getElementById("fire-list");
+    if (d.status !== "connected") {
+      st.innerHTML = R.LiveData.connBadge(d.status, d.connection);
+      el.innerHTML = R.emptyState(
+        "Live fire feed unavailable",
+        d.message || "The free live fire feed could not be reached, so fire status cannot be confirmed.",
+        "fa-fire"
+      );
+      return;
+    }
+    st.innerHTML = R.LiveData.connBadge(d.status, d.connection) + ' · ' + R.escapeHtml(d.source || 'free live feed') + ' · updated ' + R.timeAgo(d.last_updated);
+    const dets = (d.detections || []).slice(0, 8);
+    if (!dets.length) {
+      el.innerHTML = R.emptyState(
+        "All clear — no active fire detected",
+        "The latest free live India fire feed reports zero active wildfire detections. All fire-monitoring indicators are clear right now.",
+        "fa-circle-check"
+      );
+      return;
+    }
+    el.innerHTML = dets.map(f => `
+      <div class="source-row" style="margin-bottom:8px" data-testid="fire-event">
+        <div class="source-name"><span class="dot dot-red"></span> ${R.escapeHtml(f.title || "Wildfire alert")}</div>
+        <div class="source-meta">${(f.latitude||0).toFixed(2)}, ${(f.longitude||0).toFixed(2)} · ${R.escapeHtml(String(f.confidence||'—'))} · ${R.escapeHtml(String(f.source||d.source||'Live feed'))}</div>
+      </div>`).join("");
+  }
+
+  loadIncidents();
+  ["f-type","f-sev","f-status"].forEach(id => document.getElementById(id).addEventListener("change", applyFilters));
+  document.getElementById("f-loc").addEventListener("input", R.debounce(applyFilters, 250));
+  document.getElementById("refresh-btn").addEventListener("click", loadIncidents);
+
+  R.LiveData.poll(async () => { try { renderEarthquakes(await R.LiveData.fetchEarthquakes()); } catch(e){} }, 90000);
+  R.LiveData.poll(async () => { try { renderFires(await R.LiveData.fetchFires()); } catch(e){} }, 300000);
+};
+</script>
+{% endblock %}

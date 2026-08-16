@@ -1,0 +1,76 @@
+{% extends "public_base.html" %}
+
+{% block title %}Create account | RESQAI{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card card" style="max-width:460px">
+    <div class="card-pad">
+      <div class="brand" style="margin-bottom:6px"><div class="brand-mark">R</div><div class="brand-name">RESQAI</div></div>
+      <h2 style="font-size:22px;margin-top:14px">Create account</h2>
+      <p style="color:var(--muted);font-size:13.5px;margin-top:4px">Register to join the response workspace.</p>
+
+      <form id="register-form" style="margin-top:22px" data-testid="register-form">
+        <div class="form-row">
+          <label class="field-label" for="full_name">Full name</label>
+          <input class="input" id="full_name" required placeholder="Jordan Ellis" data-testid="register-fullname" />
+        </div>
+        <div class="form-row">
+          <label class="field-label" for="email">Email</label>
+          <input class="input" type="email" id="email" required placeholder="you@agency.gov" data-testid="register-email" />
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <label class="field-label" for="password">Password</label>
+            <input class="input" type="password" id="password" required minlength="6" data-testid="register-password" />
+          </div>
+          <div class="form-row">
+            <label class="field-label" for="confirm">Confirm password</label>
+            <input class="input" type="password" id="confirm" required minlength="6" data-testid="register-confirm" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="field-label" for="role">Role</label>
+          <select class="select" id="role" data-testid="register-role">
+            <option value="administrator">Administrator</option>
+            <option value="incident_commander">Incident Commander</option>
+            <option value="field_responder">Field Responder</option>
+            <option value="analyst" selected>Analyst</option>
+            <option value="verifier">Verifier</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="register-submit" data-testid="register-submit">Create Account</button>
+      </form>
+      <div class="auth-links"><span style="color:var(--muted)">Already registered?</span><a href="/login/" data-testid="link-login">Sign in</a></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const R = window.RESQAI;
+  if (R.Auth.isAuthed()) location.href = "/dashboard/";
+
+  document.getElementById("register-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const full_name = document.getElementById("full_name").value.trim();
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    const confirm = document.getElementById("confirm").value;
+    const role = document.getElementById("role").value;
+    if (password !== confirm) { R.Toast.error("Passwords do not match", "Please re-enter your password."); return; }
+    const btn = document.getElementById("register-submit");
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Creating…';
+    try {
+      const res = await R.API.post("/auth/register/", { full_name, email, password, role });
+      R.Auth.set(res.token, res.user);
+      R.Toast.success("Account created", "Welcome to RESQAI.");
+      setTimeout(() => location.href = "/dashboard/", 400);
+    } catch (err) {
+      R.Toast.error("Registration failed", err.detail || "Please check your details.");
+      btn.disabled = false; btn.textContent = "Create Account";
+    }
+  });
+</script>
+{% endblock %}

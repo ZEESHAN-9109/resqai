@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% block title %}Dashboard | RESQAI{% endblock %}
+{% block breadcrumbs %}<span class="sep">/</span><span class="current">Dashboard</span>{% endblock %}
+
+{% block content %}
+<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap">
+  <div>
+    <div class="page-title">Emergency operations dashboard</div>
+    <div class="page-desc">Verified operational picture across active incidents. <span id="last-updated" style="color:var(--muted-2)"></span></div>
+  </div>
+  <button class="btn btn-ghost btn-sm" id="refresh-btn" data-testid="dashboard-refresh"><i class="fa-solid fa-rotate"></i> Refresh</button>
+</div>
+
+<div class="grid grid-5" id="kpi-row" data-testid="kpi-row">
+  <div class="card metric-card"><div class="metric-icon red"><i class="fa-solid fa-triangle-exclamation"></i></div><div class="metric-label">Active Incidents</div><div class="metric-value" id="kpi-active">—</div><div class="metric-foot">Operator-tracked</div></div>
+  <div class="card metric-card"><div class="metric-icon amber"><i class="fa-solid fa-layer-group"></i></div><div class="metric-label">Critical Zones</div><div class="metric-value" id="kpi-critical">—</div><div class="metric-foot">Priority ≥ 75</div></div>
+  <div class="card metric-card"><div class="metric-icon"><i class="fa-solid fa-user-check"></i></div><div class="metric-label">Pending Verification</div><div class="metric-value" id="kpi-pending">—</div><div class="metric-foot">Findings to review</div></div>
+  <div class="card metric-card"><div class="metric-icon amber"><i class="fa-solid fa-road-barrier"></i></div><div class="metric-label">Blocked Routes</div><div class="metric-value" id="kpi-blocked">—</div><div class="metric-foot">From findings</div></div>
+  <div class="card metric-card"><div class="metric-icon green"><i class="fa-solid fa-people-roof"></i></div><div class="metric-label">People Affected</div><div class="metric-value" id="kpi-affected">—</div><div class="metric-foot">Reported totals</div></div>
+</div>
+
+<div class="two-col" style="margin-top:16px">
+  <a class="card dashboard-link-card" id="live-summary-card" href="/live-situation/" style="display:block;cursor:pointer">
+    <div class="card-head"><div><h3>Live incident summary &amp; event history</h3><div class="sub">New events appear at the top; previous events remain available below.</div></div><span class="btn btn-ghost btn-sm">Open live situation <i class="fa-solid fa-arrow-right"></i></span></div>
+    <div class="card-pad incident-history" id="incident-summary"></div>
+  </a>
+
+  <div>
+    <div class="card">
+      <div class="card-head"><h3>Live map preview</h3><a href="/disaster-map/" class="btn btn-ghost btn-sm">Full map</a></div>
+      <div class="map-panel" style="height:700px"><div id="map" class="map-el"></div></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-head">
+        <h3><i class="fa-solid fa-route"></i> Travel route</h3>
+        <span class="sub">Select an incident / route to calculate travel distance</span>
+      </div>
+      <div class="card-pad">
+        <div class="form-row">
+          <label class="field-label" for="quick-route-disaster">Select incident / route</label>
+          <select class="select" id="quick-route-disaster">
+            <option value="">Please select a route</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="field-label" for="quick-start-location">Starting location</label>
+          <input class="input" id="quick-start-location" placeholder="Command post / current location" />
+        </div>
+        <div class="form-grid">
+          <div class="form-row"><label class="field-label" for="quick-start-lat">Start latitude</label><input class="input" type="number" step="any" id="quick-start-lat" /></div>
+          <div class="form-row"><label class="field-label" for="quick-start-lng">Start longitude</label><input class="input" type="number" step="any" id="quick-start-lng" /></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" id="quick-plan-route"><i class="fa-solid fa-route"></i> Calculate travel distance</button>
+          <button class="btn btn-ghost btn-sm" id="quick-use-location"><i class="fa-solid fa-location-crosshairs"></i> Use my location</button>
+        </div>
+        <div id="quick-route-result" style="margin-top:12px">
+          <div class="responsible-note" style="margin:0">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>Please select an incident / route to show distance.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="two-col" style="margin-top:16px">
+  <a class="card dashboard-link-card" href="/priority-zones/" style="display:block">
+    <div class="card-head"><h3>Priority zones</h3><span class="btn btn-ghost btn-sm">Open <i class="fa-solid fa-arrow-right"></i></span></div>
+    <div class="card-pad" id="priority-list"></div>
+  </a>
+  <a class="card dashboard-link-card" href="/verification/" style="display:block">
+    <div class="card-head"><h3>Recent evidence</h3><span class="btn btn-ghost btn-sm">Open evidence <i class="fa-solid fa-arrow-right"></i></span></div>
+    <div class="card-pad" id="evidence-list"></div>
+  </a>
+</div>
+
+<div class="responsible-note" style="margin-top:20px">
+  <i class="fa-solid fa-shield-halved"></i>
+  <span>Live public feeds are free external sources. A zero-event result is shown as clear; an unavailable feed is never treated as proof that conditions are safe.</span>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.RESQAI_PAGE_INIT = function () {
+  const R = window.RESQAI, M = R.MapManager;
+  let incidents = [];
+
+  function renderIncidents(list) {
+    const el = document.getElementById("incident-summary");
+    if (!list || !list.length) {
+      el.innerHTML = R.emptyState("No incidents recorded", "No incident history is available yet.", "fa-circle-check");
+      return;
+    }
+    // API ordering is newest-first. Keep every event so new events appear at
+    // the top while previous events remain visible below.
+    el.innerHTML = list.map(d => `
+      <div class="card incident-card" style="display:block;margin-bottom:10px">
+        <div class="incident-top">
+          <div>
+            <div class="incident-code">${R.escapeHtml(d.incident_code)}</div>
+            <div class="incident-name">${R.escapeHtml(d.name)}</div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${R.severityBadge(d.severity)} ${R.statusBadge(d.status)}
+          </div>
+        </div>
+        <div class="incident-meta">
+          <span><i class="fa-solid fa-location-dot"></i> ${R.escapeHtml(d.location)}</span>
+          <span><i class="fa-solid fa-triangle-exclamation"></i> ${R.titleCase(d.disaster_type)}</span>
+          <span><i class="fa-solid fa-clock"></i> ${new Date(d.created_at).toLocaleString()}</span>
+        </div>
+        <div class="grid grid-3" style="margin-top:10px">
+          <div><div class="metric-label">Affected population</div><strong>${R.fmtNum(d.affected_population || 0)}</strong></div>
+          <div><div class="metric-label">AI findings</div><strong>${R.fmtNum(d.findings_count || 0)}</strong></div>
+          <div><div class="metric-label">Priority zones</div><strong>${R.fmtNum(d.zones_count || 0)}</strong></div>
+        </div>
+        <div style="margin-top:10px">
+          <a class="btn btn-ghost btn-sm" href="/disaster-details/?id=${d.id}">
+            View complete event <i class="fa-solid fa-arrow-right"></i>
+          </a>
+        </div>
+      </div>`).join("");
+  }
+
+  function renderPriority(list) {
+    const el = document.getElementById("priority-list");
+    if (!list || !list.length) { el.innerHTML = R.emptyState("No priority zones", "All monitored zones are currently within normal priority thresholds.", "fa-circle-check"); return; }
+    el.innerHTML = list.map(z => `
+      <div class="card card-pad" style="display:block;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><span class="mono-code">${z.zone_code}</span> · ${R.escapeHtml(z.location)}</div>
+          <strong style="font-family:var(--font-head)">${z.priority_score}/100</strong>
+        </div>
+        <div class="confidence-row" style="margin-top:9px"><div class="confidence-bar" style="flex:1"><div class="confidence-fill" style="width:${z.priority_score}%"></div></div>${R.verifBadge(z.verification_status)}</div>
+      </div>`).join("");
+  }
+
+  function renderEvidence(list) {
+    const el = document.getElementById("evidence-list");
+    if (!list || !list.length) { el.innerHTML = R.emptyState("No recent evidence", "No new evidence events have been recorded.", "fa-circle-check"); return; }
+    el.innerHTML = '<div class="timeline">' + list.map(ev => `
+      <div class="timeline-item">
+        <div class="timeline-time">${new Date(ev.timestamp).toLocaleString()}</div>
+        <div class="timeline-action">${R.escapeHtml(ev.action)}</div>
+        <div class="timeline-meta"><span>${R.escapeHtml(ev.actor || '')}</span>${ev.evidence_ref ? `<span class="evidence-ref">${R.escapeHtml(ev.evidence_ref)}</span>` : ''}</div>
+      </div>`).join("") + '</div>';
+  }
+
+  function populateRouteIncidents(list) {
+    // Historical, monitoring, resolved, and active incidents can all be used
+    // as route destinations.
+    incidents = list || [];
+    const select = document.getElementById("quick-route-disaster");
+    select.innerHTML = '<option value="">Please select an incident / route</option>' +
+      incidents.map(d => `<option value="${d.id}">${d.incident_code} · ${R.escapeHtml(d.name)} · ${R.escapeHtml(d.location)} · ${R.titleCase(d.status)}</option>`).join("");
+    if (!incidents.length) select.innerHTML = '<option value="">No incidents available</option>';
+    showRoutePrompt();
+  }
+
+  function showRoutePrompt() {
+    const selected = document.getElementById("quick-route-disaster").value;
+    if (!selected) {
+      document.getElementById("quick-route-result").innerHTML = `
+        <div class="responsible-note" style="margin:0">
+          <i class="fa-solid fa-circle-info"></i>
+          <span>Please select an incident / route to show distance.</span>
+        </div>`;
+    }
+  }
+
+  function renderMap(list, zones, earthquakes, fires) {
+    if (!M.init("map", [20, 78], 3)) return;
+    M.clear("incident"); M.clear("priority"); M.clear("route"); M.clear("team");
+    M.clear("earthquake"); M.clear("fire");
+    const pts = [];
+
+    (list || []).forEach(d => {
+      M.addMarker("incident", d.latitude, d.longitude,
+        `<strong>${R.escapeHtml(d.name)}</strong><br>${R.titleCase(d.disaster_type)} · ${R.titleCase(d.severity)}<br>${R.titleCase(d.status)}<br><a href="/disaster-details/?id=${d.id}">Open details</a>`);
+      pts.push([d.latitude, d.longitude]);
+    });
+
+    (zones || []).forEach(z => {
+      if (z.latitude != null && z.longitude != null)
+        M.addCircle("priority", z.latitude, z.longitude, 900,
+          `${R.escapeHtml(z.zone_code)} · Priority ${z.priority_score}/100`);
+    });
+
+    (earthquakes || []).forEach(e => {
+      if (e.latitude == null || e.longitude == null) return;
+      M.addMarker("earthquake", e.latitude, e.longitude,
+        `<strong>Earthquake M${e.magnitude ?? "—"}</strong><br>${R.escapeHtml(e.location || "India")}<br>Live source: USGS`);
+      pts.push([e.latitude, e.longitude]);
+    });
+
+    (fires || []).forEach(f => {
+      if (f.latitude == null || f.longitude == null) return;
+      M.addMarker("fire", f.latitude, f.longitude,
+        `<strong>${R.escapeHtml(f.title || "Wildfire alert")}</strong><br>Live source: ${R.escapeHtml(f.source || "Public feed")}`);
+      pts.push([f.latitude, f.longitude]);
+    });
+
+    if (pts.length) M.fit(pts);
+  }
+
+  async function loadStats() {
+    try {
+      const s = await R.API.get("/dashboard/stats/");
+      document.getElementById("kpi-active").textContent = R.fmtNum(s.active_incidents);
+      document.getElementById("kpi-critical").textContent = R.fmtNum(s.critical_zones);
+      document.getElementById("kpi-pending").textContent = R.fmtNum(s.pending_verification);
+      document.getElementById("kpi-blocked").textContent = R.fmtNum(s.blocked_routes);
+      document.getElementById("kpi-affected").textContent = R.fmtNum(s.people_affected);
+      document.getElementById("last-updated").textContent = "· Last updated " + new Date().toLocaleTimeString();
+      renderIncidents(s.recent_incidents);
+      renderPriority(s.priority_zones);
+      renderEvidence(s.recent_evidence);
+      const allIncidents = await R.API.get("/disasters/");
+      populateRouteIncidents(allIncidents);
+
+      // Pull every currently available live public event so the dashboard map
+      // is not limited to the first five database incidents.
+      const [eqResult, fireResult] = await Promise.allSettled([
+        R.API.get("/live/earthquakes/"),
+        R.API.get("/live/fires/")
+      ]);
+      const eqPayload = eqResult.status === "fulfilled" ? eqResult.value : {events: []};
+      const firePayload = fireResult.status === "fulfilled" ? fireResult.value : {events: []};
+      renderMap(
+        allIncidents,
+        s.priority_zones,
+        eqPayload.events || [],
+        firePayload.events || []
+      );
+    } catch (e) {
+      document.getElementById("incident-summary").innerHTML = R.errorState(e.detail);
+    }
+  }
+
+  document.getElementById("quick-route-disaster").addEventListener("change", showRoutePrompt);
+  document.getElementById("quick-use-location").addEventListener("click", () => {
+    if (!navigator.geolocation) { R.Toast.warning("Location unavailable", "Enter the starting coordinates manually."); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        document.getElementById("quick-start-lat").value = pos.coords.latitude.toFixed(5);
+        document.getElementById("quick-start-lng").value = pos.coords.longitude.toFixed(5);
+        document.getElementById("quick-start-location").value = "My current location";
+        R.Toast.success("Start location set", "Your current coordinates are ready for route planning.");
+      },
+      () => R.Toast.warning("Location permission denied", "Enter the start coordinates manually."),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  });
+
+  document.getElementById("quick-plan-route").addEventListener("click", async () => {
+    const d = incidents.find(x => String(x.id) === document.getElementById("quick-route-disaster").value);
+    const slat = document.getElementById("quick-start-lat").value;
+    const slng = document.getElementById("quick-start-lng").value;
+    if (!d) {
+      showRoutePrompt();
+      R.Toast.warning("No route selected", "Please select an incident / route to show distance.");
+      return;
+    }
+    if (!slat || !slng) { R.Toast.warning("Starting location required", "Use my location or enter the start coordinates."); return; }
+    const btn = document.getElementById("quick-plan-route");
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Planning…';
+    try {
+      const rt = await R.API.post("/routes/plan/", {
+        disaster: d.id,
+        start_location: document.getElementById("quick-start-location").value || "Starting location",
+        start_lat: slat, start_lng: slng,
+        dest_location: d.location, dest_lat: d.latitude, dest_lng: d.longitude,
+      });
+      document.getElementById("quick-route-result").innerHTML = `
+        <div class="responsible-note" style="margin:0">
+          <i class="fa-solid fa-route"></i>
+          <span><strong>${R.escapeHtml(rt.route_status_display)}</strong> · ${rt.distance_km} km · ${rt.est_minutes} min<br>${R.escapeHtml(rt.explanation)}</span>
+        </div>`;
+      M.clear("route");
+      const coords = rt.geometry && rt.geometry.length ? rt.geometry : [[+slat, +slng], [+d.latitude, +d.longitude]];
+      M.drawRoute(coords);
+      M.addMarker("team", +slat, +slng, "Start: " + R.escapeHtml(document.getElementById("quick-start-location").value || "Starting location"));
+      M.addMarker("incident", +d.latitude, +d.longitude, "Destination: " + R.escapeHtml(d.name));
+      R.Toast.success("Route planned", rt.route_code + " · " + rt.route_status_display);
+    } catch (e) { R.Toast.error("Could not plan route", e.detail); }
+    finally { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-route"></i> Find suitable route'; }
+  });
+
+  document.getElementById("refresh-btn").addEventListener("click", loadStats);
+  loadStats();
+  setInterval(loadStats, 60000);
+};
+</script>
+{% endblock %}

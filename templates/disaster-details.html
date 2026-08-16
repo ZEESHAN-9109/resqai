@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Disaster Details | RESQAI{% endblock %}
+{% block breadcrumbs %}<span class="sep">/</span><span>Dashboard</span><span class="sep">/</span><span class="current" id="crumb">Disaster Details</span>{% endblock %}
+
+{% block content %}
+<div id="picker" style="display:none">
+  <div class="page-head"><div class="page-title">Disaster details</div><div class="page-desc">Select an incident to open its workspace.</div></div>
+  <div id="picker-list"></div>
+</div>
+
+<div id="workspace" style="display:none">
+  <div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px">
+    <div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span class="mono-code" id="w-code"></span>
+        <span id="w-severity"></span>
+        <span id="w-status"></span>
+      </div>
+      <div class="page-title" id="w-name" style="margin-top:6px"></div>
+      <div class="page-desc" id="w-meta"></div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <a class="btn btn-ghost btn-sm" id="w-analyze"><i class="fa-solid fa-image"></i> Analyse image</a>
+      <a class="btn btn-primary btn-sm" id="w-assign"><i class="fa-solid fa-people-group"></i> Assign response</a>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs" data-testid="detail-tabs">
+    <div class="tab active" data-tab="overview">Overview</div>
+    <div class="tab" data-tab="map">Map</div>
+    <div class="tab" data-tab="evidence">Evidence</div>
+    <div class="tab" data-tab="findings">AI Findings</div>
+    <div class="tab" data-tab="verification">Verification</div>
+    <div class="tab" data-tab="priority">Priority</div>
+    <div class="tab" data-tab="response">Response</div>
+    <div class="tab" data-tab="routes">Routes</div>
+    <div class="tab" data-tab="timeline">Timeline</div>
+  </div>
+
+  <div class="tab-panel active" id="p-overview"></div>
+  <div class="tab-panel" id="p-map"><div class="map-panel" style="height:420px"><div id="map" class="map-el"></div></div></div>
+  <div class="tab-panel" id="p-evidence"></div>
+  <div class="tab-panel" id="p-findings"></div>
+  <div class="tab-panel" id="p-verification"></div>
+  <div class="tab-panel" id="p-priority"></div>
+  <div class="tab-panel" id="p-response"></div>
+  <div class="tab-panel" id="p-routes"></div>
+  <div class="tab-panel" id="p-timeline"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.RESQAI_PAGE_INIT = function () {
+  const R = window.RESQAI, M = R.MapManager;
+  const id = R.qp("id");
+  let mapReady = false;
+
+  if (!id) { showPicker(); return; }
+  loadWorkspace();
+
+  async function showPicker() {
+    document.getElementById("picker").style.display = "block";
+    const el = document.getElementById("picker-list");
+    el.innerHTML = R.loadingBlock(3);
+    try {
+      const list = await R.API.get("/disasters/");
+      if (!list.length) { el.innerHTML = R.emptyState("No incidents", "Create an incident first.", "fa-clipboard-list"); return; }
+      el.innerHTML = '<div class="grid grid-2">' + list.map(d => `
+        <a class="card incident-card" href="/disaster-details/?id=${d.id}">
+          <div class="incident-top"><div><div class="incident-code">${d.incident_code}</div><div class="incident-name">${R.escapeHtml(d.name)}</div></div>${R.severityBadge(d.severity)}</div>
+          <div class="incident-meta"><span><i class="fa-solid fa-location-dot"></i> ${R.escapeHtml(d.location)}</span>${R.statusBadge(d.status)}</div>
+        </a>`).join("") + '</div>';
+    } catch (e) { el.innerHTML = R.errorState(e.detail); }
+  }
+
+  async function loadWorkspace() {
+    document.getElementById("workspace").style.display = "block";
+    let d;
+    try { d = await R.API.get("/disasters/" + id + "/"); }
+    catch (e) { document.getElementById("workspace").innerHTML = R.errorState(e.detail); return; }
+
+    document.getElementById("crumb").textContent = d.incident_code;
+    document.getElementById("w-code").textContent = d.incident_code;
+    document.getElementById("w-severity").innerHTML = R.severityBadge(d.severity);
+    document.getElementById("w-status").innerHTML = R.statusBadge(d.status);
+    document.getElementById("w-name").textContent = d.name;
+    document.getElementById("w-meta").innerHTML = `${R.titleCase(d.disaster_type)} · ${R.escapeHtml(d.location)} · <span class="mono">${(d.latitude||0).toFixed(3)}, ${(d.longitude||0).toFixed(3)}</span>`;
+    document.getElementById("w-analyze").href = "/image-analysis/?disaster=" + d.id;
+    document.getElementById("w-assign").href = "/response-coordination/?disaster=" + d.id;
+
+    // Overview
+    document.getElementById("p-overview").innerHTML = `
+      <div class="grid grid-4">
+        <div class="card metric-card"><div class="metric-label">Affected population</div><div class="metric-value" style="font-size:24px">${R.fmtNum(d.affected_population)}</div></div>
+        <div class="card metric-card"><div class="metric-label">Findings</div><div class="metric-value" style="font-size:24px">${d.findings.length}</div></div>
+        <div class="card metric-card"><div class="metric-label">Priority zones</div><div class="metric-value" style="font-size:24px">${d.priority_zones.length}</div></div>
+        <div class="card metric-card"><div class="metric-label">Assignments</div><div class="metric-value" style="font-size:24px">${d.assignments.length}</div></div>
+      </div>
+      <div class="card card-pad" style="margin-top:16px"><div class="section-title">Description</div><p style="color:var(--muted)">${R.escapeHtml(d.description||'No description provided.')}</p></div>`;
+
+    // Evidence (reports + analyses)
+    const evParts = [];
+    evParts.push('<div class="section-title">Field reports</div>');
+    evParts.push(d.reports.length ? d.reports.map(r => `<div class="card evidence-card" style="margin-bottom:10px"><span class="mono-code">${r.report_code}</span> <strong>${R.escapeHtml(r.title)}</strong> ${R.verifBadge(r.verification_status)}<div style="color:var(--muted);font-size:12.5px;margin-top:5px">${R.escapeHtml(r.description)}</div></div>`).join("") : R.emptyState("No reports","","fa-file-lines"));
+    evParts.push('<div class="section-title" style="margin-top:18px">Image analyses</div>');
+    evParts.push(d.analyses.length ? d.analyses.map(a => `<div class="card evidence-card" style="margin-bottom:10px"><span class="mono-code">${a.analysis_code}</span> · confidence ${R.confidencePct(a.overall_confidence)}% · ${a.findings.length} findings<div style="color:var(--muted);font-size:12.5px;margin-top:5px">${R.escapeHtml(a.summary||'')}</div></div>`).join("") : R.emptyState("No analyses","","fa-image"));
+    document.getElementById("p-evidence").innerHTML = evParts.join("");
+
+    // Findings
+    const TYPE_ICON = { damaged_building:"fa-building-circle-exclamation", blocked_road:"fa-road-barrier", service_disruption:"fa-plug-circle-xmark", other:"fa-circle-info" };
+    document.getElementById("p-findings").innerHTML = d.findings.length ? '<div class="grid grid-2">' + d.findings.map(f => `
+      <div class="card card-pad"><div style="display:flex;justify-content:space-between"><div><span class="mono-code">${f.finding_code}</span> <i class="fa-solid ${TYPE_ICON[f.finding_type]}"></i> <strong>${R.escapeHtml(f.label)}</strong></div>${R.verifBadge(f.verification_status)}</div>
+      <div style="color:var(--muted);font-size:12.5px;margin-top:8px">${R.escapeHtml(f.evidence||'')}</div>
+      <div class="confidence-row" style="margin-top:9px"><div class="confidence-bar" style="flex:1"><div class="confidence-fill" style="width:${R.confidencePct(f.confidence)}%"></div></div><span class="val">${R.confidencePct(f.confidence)}%</span></div></div>`).join("") + '</div>'
+      : R.emptyState("No AI findings", "Analyse an image to generate findings.", "fa-flask");
+
+    // Verification summary
+    const unv = d.findings.filter(f => f.verification_status === "unverified");
+    document.getElementById("p-verification").innerHTML = `
+      <div class="card card-pad"><div style="display:flex;justify-content:space-between;align-items:center">
+      <div><strong>${unv.length}</strong> of ${d.findings.length} findings await verification.</div>
+      <a class="btn btn-primary btn-sm" href="/verification/"><i class="fa-solid fa-user-check"></i> Open verification center</a></div></div>`;
+
+    // Priority
+    document.getElementById("p-priority").innerHTML = d.priority_zones.length ? d.priority_zones.map(z => `
+      <div class="card card-pad" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between"><div><span class="mono-code">${z.zone_code}</span> ${R.escapeHtml(z.location)}</div><strong style="font-family:var(--font-head);font-size:20px">${z.priority_score}/100</strong></div>
+      <a class="btn btn-ghost btn-sm" style="margin-top:10px" href="/priority-zones/?zone=${z.id}"><i class="fa-solid fa-circle-question"></i> Why this priority?</a></div>`).join("")
+      : R.emptyState("No priority zones", "Generate a zone from Priority Zones.", "fa-layer-group");
+
+    // Response
+    document.getElementById("p-response").innerHTML = d.assignments.length ? '<div class="table-wrap"><table class="table table-responsive"><thead><tr><th>ID</th><th>Task</th><th>Responder</th><th>Priority</th><th>Status</th></tr></thead><tbody>' +
+      d.assignments.map(a => `<tr><td data-label="ID"><span class="mono-code">${a.assignment_code}</span></td><td data-label="Task">${R.escapeHtml(a.task)}</td><td data-label="Responder">${R.escapeHtml(a.responder_name||'—')}</td><td data-label="Priority">${R.severityBadge(a.priority)}</td><td data-label="Status">${R.statusBadge(a.status)}</td></tr>`).join("") + '</tbody></table></div>'
+      : R.emptyState("No responders assigned", "Assign from Response Coordination.", "fa-people-group");
+
+    // Routes
+    document.getElementById("p-routes").innerHTML = d.routes.length ? d.routes.map(rt => `
+      <div class="card card-pad" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between"><span class="mono-code">${rt.route_code}</span><span class="badge ${rt.route_status==='blocked'?'critical':rt.route_status==='obstruction'?'high':rt.route_status==='passable'?'low':'neutral'}">${R.escapeHtml(rt.route_status_display)}</span></div>
+      <div style="margin-top:8px;color:var(--muted);font-size:13px">${rt.distance_km} km · ${rt.est_minutes} min · ${R.escapeHtml(rt.explanation)}</div></div>`).join("")
+      : R.emptyState("No routes planned", "Plan a route from Route Planner.", "fa-route");
+
+    // Timeline
+    document.getElementById("p-timeline").innerHTML = d.timeline.length ? '<div class="card card-pad"><div class="timeline">' + d.timeline.map(ev => `
+      <div class="timeline-item"><div class="timeline-time">${new Date(ev.timestamp).toLocaleString()}</div><div class="timeline-action">${R.escapeHtml(ev.action)}</div>
+      <div class="timeline-meta"><span>${R.escapeHtml(ev.actor||'')}</span><span>${R.escapeHtml(ev.source||'')}</span>${ev.evidence_ref?`<span class="evidence-ref">${ev.evidence_ref}</span>`:''}</div></div>`).join("") + '</div></div>'
+      : R.emptyState("No timeline events", "", "fa-diagram-project");
+
+    // tabs
+    document.querySelectorAll("#tabs .tab").forEach(t => t.addEventListener("click", () => {
+      document.querySelectorAll("#tabs .tab").forEach(x => x.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach(x => x.classList.remove("active"));
+      t.classList.add("active");
+      document.getElementById("p-" + t.dataset.tab).classList.add("active");
+      if (t.dataset.tab === "map" && !mapReady) initMap(d);
+    }));
+  }
+
+  function initMap(d) {
+    if (!M.init("map", [d.latitude, d.longitude], 11)) return;
+    mapReady = true;
+    M.addMarker("incident", d.latitude, d.longitude, `<strong>${R.escapeHtml(d.name)}</strong>`);
+    (d.priority_zones||[]).forEach(z => { if (z.latitude) M.addCircle("priority", z.latitude, z.longitude, 700, z.zone_code + " · " + z.priority_score); });
+    setTimeout(() => M.map.invalidateSize(), 150);
+  }
+};
+</script>
+{% endblock %}
