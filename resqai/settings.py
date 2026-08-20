@@ -125,7 +125,7 @@ CORS_ALLOW_HEADERS = ["*"]
 # ---- Vision AI: Google Gemini (bring your own key from Google AI Studio) ----
 # Get a free key at https://aistudio.google.com/apikey  and put it in .env
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
-GOOGLE_MODEL = os.environ.get("GOOGLE_MODEL", "gemini-2.5-flash")
+GOOGLE_MODEL = os.environ.get("GOOGLE_MODEL", "gemini-3.6-flash")
 AI_MODEL_PROVIDER = "google"
 AI_MODEL_NAME = GOOGLE_MODEL
 

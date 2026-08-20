@@ -79,7 +79,7 @@ def _call_gemini(image_path, mime_type, disaster):
                 {"inline_data": {"mime_type": mime_type, "data": b64}},
             ],
         }],
-        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.2},
+        "generationConfig": {"responseMimeType": "application/json"},
     }
     resp = requests.post(url, json=body, timeout=60)
     if resp.status_code != 200:
