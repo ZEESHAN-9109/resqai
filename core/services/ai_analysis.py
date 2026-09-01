@@ -69,32 +69,67 @@ def _call_gemini(image_path, mime_type, disaster):
     with open(image_path, "rb") as fh:
         b64 = base64.b64encode(fh.read()).decode("utf-8")
 
-    url = GEMINI_URL.format(model=settings.GOOGLE_MODEL, key=settings.GOOGLE_API_KEY)
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{settings.GOOGLE_MODEL}:generateContent"
+    )
+
     body = {
-        "system_instruction": {"parts": [{"text": SYSTEM_MESSAGE}]},
+        "system_instruction": {
+            "parts": [{"text": SYSTEM_MESSAGE}]
+        },
         "contents": [{
             "role": "user",
             "parts": [
                 {"text": _prompt(disaster)},
-                {"inline_data": {"mime_type": mime_type, "data": b64}},
+                {
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": b64
+                    }
+                },
             ],
         }],
-        "generationConfig": {"responseMimeType": "application/json"},
+        "generationConfig": {
+            "responseMimeType": "application/json"
+        },
     }
-    resp = requests.post(url, json=body, timeout=60)
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": settings.GOOGLE_API_KEY,
+    }
+
+    resp = requests.post(
+        url,
+        headers=headers,
+        json=body,
+        timeout=60
+    )
+
     if resp.status_code != 200:
         detail = ""
         try:
             detail = resp.json().get("error", {}).get("message", "")
-        except Exception:  # noqa: BLE001
+        except Exception:
             detail = resp.text[:200]
-        raise RuntimeError(f"Gemini API {resp.status_code}: {detail}")
+
+        raise RuntimeError(
+            f"Gemini API {resp.status_code}: {detail}"
+        )
+
     data = resp.json()
+
     candidates = data.get("candidates") or []
+
     if not candidates:
         raise RuntimeError("Gemini returned no candidates.")
+
     parts = candidates[0].get("content", {}).get("parts", [])
-    return "".join(p.get("text", "") for p in parts)
+
+    return "".join(
+        p.get("text", "") for p in parts
+    )
 
 
 def analyze_image(image_path, mime_type, disaster):
