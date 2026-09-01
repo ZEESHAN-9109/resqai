@@ -63,10 +63,11 @@ class DisasterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Disaster
         fields = [
-            "id", "incident_code", "name", "disaster_type", "severity", "status",
-            "location", "latitude", "longitude", "description", "affected_population",
-            "findings_count", "zones_count", "created_at", "updated_at",
-        ]
+    "id", "incident_code", "name", "disaster_type", "severity", "status",
+    "verification_status",
+    "location", "latitude", "longitude", "description", "affected_population",
+    "findings_count", "zones_count", "created_at", "updated_at",
+]
         read_only_fields = ["created_at", "updated_at"]
 
     def get_findings_count(self, obj):

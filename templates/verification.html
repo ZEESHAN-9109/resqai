@@ -21,77 +21,496 @@
 <script>
 window.RESQAI_PAGE_INIT = function () {
   const R = window.RESQAI;
-  const TYPES = [["damaged_building","Damaged Building"],["blocked_road","Blocked Road"],["service_disruption","Service Disruption"],["other","Other"]];
+
+  const TYPES = [
+    ["damaged_building", "Damaged Building"],
+    ["blocked_road", "Blocked Road"],
+    ["service_disruption", "Service Disruption"],
+    ["other", "Other"]
+  ];
 
   async function load() {
     const el = document.getElementById("queue");
+
     el.innerHTML = R.loadingBlock(4);
+
     try {
       const list = await R.API.get("/verification/queue/");
+
       document.getElementById("queue-count").textContent = list.length;
-      if (!list.length) { el.innerHTML = R.emptyState("No verification tasks", "All findings have been reviewed.", "fa-clipboard-check"); return; }
-      el.innerHTML = '<div class="grid grid-2">' + list.map(cardHtml).join("") + '</div>';
+
+      if (!list.length) {
+        el.innerHTML = R.emptyState(
+          "No verification tasks",
+          "All findings and disaster reports have been reviewed.",
+          "fa-clipboard-check"
+        );
+        return;
+      }
+
+      el.innerHTML =
+        '<div class="grid grid-2">' +
+        list.map(cardHtml).join("") +
+        "</div>";
+
       list.forEach(bind);
-    } catch (e) { el.innerHTML = R.errorState(e.detail); }
+
+    } catch (e) {
+      el.innerHTML = R.errorState(e.detail);
+    }
   }
 
-  const TYPE_ICON = { damaged_building: "fa-building-circle-exclamation", blocked_road: "fa-road-barrier", service_disruption: "fa-plug-circle-xmark", other: "fa-circle-info" };
+  const TYPE_ICON = {
+    damaged_building: "fa-building-circle-exclamation",
+    blocked_road: "fa-road-barrier",
+    service_disruption: "fa-plug-circle-xmark",
+    other: "fa-circle-info"
+  };
 
-  function cardHtml(f) {
-    return `<div class="card" data-testid="verify-card-${f.id}">
-      ${f.image_url ? `<img src="${f.image_url}" style="width:100%;height:150px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0" onerror="this.style.display='none'"/>` : ''}
-      <div class="card-pad">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-          <div><span class="mono-code">${f.finding_code}</span> <i class="fa-solid ${TYPE_ICON[f.finding_type]||'fa-circle'}"></i>
-          <div style="font-weight:700;margin-top:2px">${R.escapeHtml(f.label)}</div>
-          <div style="font-size:12.5px;color:var(--muted)">${R.escapeHtml(f.disaster_name)} · ${R.escapeHtml(f.location_hint||'')}</div></div>
-          <span class="badge neutral">${R.confidencePct(f.confidence)}%</span>
+
+  function cardHtml(item) {
+
+    /* ---------------- DISASTER REPORT ---------------- */
+
+    if (item.item_type === "disaster") {
+
+      const severity =
+        item.severity
+          ? item.severity.charAt(0).toUpperCase() +
+            item.severity.slice(1)
+          : "Unknown";
+
+      const disasterType =
+        item.disaster_type
+          ? item.disaster_type.charAt(0).toUpperCase() +
+            item.disaster_type.slice(1)
+          : "Unknown";
+
+      return `
+        <div class="card" data-testid="verify-disaster-card-${item.id}">
+
+          <div class="card-pad">
+
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+
+              <div>
+
+                <span class="mono-code">
+                  ${R.escapeHtml(item.incident_code)}
+                </span>
+
+                <div style="font-weight:700;margin-top:6px">
+                  ${R.escapeHtml(item.name)}
+                </div>
+
+                <div style="font-size:12.5px;color:var(--muted);margin-top:3px">
+                  ${R.escapeHtml(disasterType)}
+                  ·
+                  ${R.escapeHtml(item.location || "")}
+                </div>
+
+              </div>
+
+              <span class="badge neutral">
+                ${R.escapeHtml(severity)}
+              </span>
+
+            </div>
+
+
+            <div style="font-size:12.5px;color:var(--muted);margin-top:12px">
+
+              <strong style="color:var(--text)">
+                Disaster report:
+              </strong>
+
+              ${R.escapeHtml(item.description || "No description provided.")}
+
+            </div>
+
+
+            <div style="font-size:12.5px;color:var(--muted);margin-top:9px">
+
+              <strong style="color:var(--text)">
+                Verification:
+              </strong>
+
+              <span class="badge neutral">
+                Unverified
+              </span>
+
+            </div>
+
+
+            <div style="display:flex;gap:8px;margin-top:14px">
+
+              <button
+                class="btn btn-success btn-sm"
+                data-act="confirm"
+                data-item-type="disaster"
+                data-id="${item.id}"
+                data-testid="confirm-disaster-${item.id}"
+              >
+                <i class="fa-solid fa-check"></i>
+                Confirm
+              </button>
+
+
+              <button
+                class="btn btn-danger btn-sm"
+                data-act="reject"
+                data-item-type="disaster"
+                data-id="${item.id}"
+                data-testid="reject-disaster-${item.id}"
+              >
+                <i class="fa-solid fa-xmark"></i>
+                Reject
+              </button>
+
+            </div>
+
+          </div>
+
         </div>
-        <div style="font-size:12.5px;color:var(--muted);margin-top:10px"><strong style="color:var(--text)">Evidence:</strong> ${R.escapeHtml(f.evidence||'—')}</div>
-        <div class="confidence-row" style="margin-top:9px"><div class="confidence-bar" style="flex:1"><div class="confidence-fill" style="width:${R.confidencePct(f.confidence)}%"></div></div></div>
-        <div style="display:flex;gap:8px;margin-top:14px">
-          <button class="btn btn-success btn-sm" data-act="confirm" data-id="${f.id}" data-testid="confirm-${f.id}"><i class="fa-solid fa-check"></i> Confirm</button>
-          <button class="btn btn-sm" data-act="correct" data-id="${f.id}" data-testid="correct-${f.id}"><i class="fa-solid fa-pen"></i> Correct</button>
-          <button class="btn btn-danger btn-sm" data-act="reject" data-id="${f.id}" data-testid="reject-${f.id}"><i class="fa-solid fa-xmark"></i> Reject</button>
+      `;
+    }
+
+
+    /* ---------------- EXISTING FINDING ---------------- */
+
+    return `
+      <div class="card" data-testid="verify-card-${item.id}">
+
+        ${
+          item.image_url
+            ? `
+              <img
+                src="${item.image_url}"
+                style="width:100%;height:150px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0"
+                onerror="this.style.display='none'"
+              />
+            `
+            : ""
+        }
+
+        <div class="card-pad">
+
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+
+            <div>
+
+              <span class="mono-code">
+                ${item.finding_code}
+              </span>
+
+              <i class="fa-solid ${
+                TYPE_ICON[item.finding_type] || "fa-circle"
+              }"></i>
+
+              <div style="font-weight:700;margin-top:2px">
+                ${R.escapeHtml(item.label)}
+              </div>
+
+              <div style="font-size:12.5px;color:var(--muted)">
+                ${R.escapeHtml(item.disaster_name)}
+                ·
+                ${R.escapeHtml(item.location_hint || "")}
+              </div>
+
+            </div>
+
+            <span class="badge neutral">
+              ${R.confidencePct(item.confidence)}%
+            </span>
+
+          </div>
+
+
+          <div style="font-size:12.5px;color:var(--muted);margin-top:10px">
+
+            <strong style="color:var(--text)">
+              Evidence:
+            </strong>
+
+            ${R.escapeHtml(item.evidence || "—")}
+
+          </div>
+
+
+          <div class="confidence-row" style="margin-top:9px">
+
+            <div class="confidence-bar" style="flex:1">
+
+              <div
+                class="confidence-fill"
+                style="width:${R.confidencePct(item.confidence)}%"
+              ></div>
+
+            </div>
+
+          </div>
+
+
+          <div style="display:flex;gap:8px;margin-top:14px">
+
+            <button
+              class="btn btn-success btn-sm"
+              data-act="confirm"
+              data-item-type="finding"
+              data-id="${item.id}"
+              data-testid="confirm-${item.id}"
+            >
+              <i class="fa-solid fa-check"></i>
+              Confirm
+            </button>
+
+
+            <button
+              class="btn btn-sm"
+              data-act="correct"
+              data-item-type="finding"
+              data-id="${item.id}"
+              data-testid="correct-${item.id}"
+            >
+              <i class="fa-solid fa-pen"></i>
+              Correct
+            </button>
+
+
+            <button
+              class="btn btn-danger btn-sm"
+              data-act="reject"
+              data-item-type="finding"
+              data-id="${item.id}"
+              data-testid="reject-${item.id}"
+            >
+              <i class="fa-solid fa-xmark"></i>
+              Reject
+            </button>
+
+          </div>
+
         </div>
-      </div></div>`;
+
+      </div>
+    `;
   }
 
-  function bind(f) {
-    document.querySelectorAll(`[data-id="${f.id}"]`).forEach(btn => btn.addEventListener("click", () => {
-      const act = btn.dataset.act;
-      if (act === "correct") openCorrect(f);
-      else submit(f.id, { action: act });
-    }));
+
+  function bind(item) {
+
+    document
+      .querySelectorAll(`[data-id="${item.id}"]`)
+      .forEach(btn => {
+
+        btn.addEventListener("click", () => {
+
+          const act = btn.dataset.act;
+          const itemType = btn.dataset.itemType;
+
+          if (
+            itemType === "finding" &&
+            act === "correct"
+          ) {
+            openCorrect(item);
+          }
+
+          else if (itemType === "disaster") {
+            submitDisaster(item.id, {
+              action: act
+            });
+          }
+
+          else {
+            submit(item.id, {
+              action: act
+            });
+          }
+
+        });
+
+      });
+
   }
+
 
   function openCorrect(f) {
+
     const body = `
-      <div class="form-row"><label class="field-label">Correct classification</label>
-      <select class="select" id="correct-class" data-testid="correct-classification">${TYPES.map(([v,l]) => `<option value="${v}" ${v===f.finding_type?'selected':''}>${l}</option>`).join("")}</select></div>
-      <div class="form-row"><label class="field-label">Reason</label><input class="input" id="correct-reason" placeholder="Why is the original classification wrong?" data-testid="correct-reason" /></div>
-      <div class="form-row"><label class="field-label">Notes</label><textarea class="textarea" id="correct-notes" placeholder="Additional context…" data-testid="correct-notes"></textarea></div>`;
-    const foot = `<button class="btn btn-ghost" onclick="RESQAI.closeModal()">Cancel</button><button class="btn btn-primary" id="save-correct" data-testid="save-correction">Save correction</button>`;
-    R.openModal("Correct finding " + f.finding_code, body, foot);
-    document.getElementById("save-correct").addEventListener("click", () => submit(f.id, {
-      action: "correct",
-      correct_classification: document.getElementById("correct-class").value,
-      reason: document.getElementById("correct-reason").value,
-      notes: document.getElementById("correct-notes").value,
-    }));
+      <div class="form-row">
+
+        <label class="field-label">
+          Correct classification
+        </label>
+
+        <select
+          class="select"
+          id="correct-class"
+          data-testid="correct-classification"
+        >
+
+          ${TYPES.map(([v, l]) => `
+            <option
+              value="${v}"
+              ${v === f.finding_type ? "selected" : ""}
+            >
+              ${l}
+            </option>
+          `).join("")}
+
+        </select>
+
+      </div>
+
+
+      <div class="form-row">
+
+        <label class="field-label">
+          Reason
+        </label>
+
+        <input
+          class="input"
+          id="correct-reason"
+          placeholder="Why is the original classification wrong?"
+          data-testid="correct-reason"
+        />
+
+      </div>
+
+
+      <div class="form-row">
+
+        <label class="field-label">
+          Notes
+        </label>
+
+        <textarea
+          class="textarea"
+          id="correct-notes"
+          placeholder="Additional context…"
+          data-testid="correct-notes"
+        ></textarea>
+
+      </div>
+    `;
+
+
+    const foot = `
+      <button
+        class="btn btn-ghost"
+        onclick="RESQAI.closeModal()"
+      >
+        Cancel
+      </button>
+
+      <button
+        class="btn btn-primary"
+        id="save-correct"
+        data-testid="save-correction"
+      >
+        Save correction
+      </button>
+    `;
+
+
+    R.openModal(
+      "Correct finding " + f.finding_code,
+      body,
+      foot
+    );
+
+
+    document
+      .getElementById("save-correct")
+      .addEventListener("click", () => {
+
+        submit(f.id, {
+
+          action: "correct",
+
+          correct_classification:
+            document.getElementById("correct-class").value,
+
+          reason:
+            document.getElementById("correct-reason").value,
+
+          notes:
+            document.getElementById("correct-notes").value
+
+        });
+
+      });
+
   }
+
 
   async function submit(id, payload) {
+
     try {
-      await R.API.post("/verification/" + id + "/", payload);
+
+      await R.API.post(
+        "/verification/" + id + "/",
+        payload
+      );
+
       R.closeModal();
-      R.Toast.success("Verification recorded.", "Finding " + payload.action + "ed.");
+
+      R.Toast.success(
+        "Verification recorded.",
+        "Finding " + payload.action + "ed."
+      );
+
       load();
-    } catch (e) { R.Toast.error("Could not record verification", e.detail); }
+
+    } catch (e) {
+
+      R.Toast.error(
+        "Could not record verification",
+        e.detail
+      );
+
+    }
+
   }
 
+
+  async function submitDisaster(id, payload) {
+
+    try {
+
+      await R.API.post(
+        "/verification/disaster/" + id + "/",
+        payload
+      );
+
+      R.closeModal();
+
+      R.Toast.success(
+        "Verification recorded.",
+        "Incident " + payload.action + "ed."
+      );
+
+      load();
+
+    } catch (e) {
+
+      R.Toast.error(
+        "Could not record verification",
+        e.detail
+      );
+
+    }
+
+  }
+
+
   load();
-  document.getElementById("refresh-btn").addEventListener("click", load);
+
+  document
+    .getElementById("refresh-btn")
+    .addEventListener("click", load);
+
 };
 </script>
 {% endblock %}

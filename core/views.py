@@ -249,8 +249,39 @@ def analyze_image(request):
 # --------------------------- Verification ---------------------------
 @api_view(["GET"])
 def verification_queue(request):
-    qs = Finding.objects.filter(verification_status="unverified")
-    return Response(FindingSerializer(qs, many=True).data)
+    findings = Finding.objects.filter(
+        verification_status="unverified"
+    )
+
+    disasters = Disaster.objects.filter(
+        verification_status="unverified"
+    )
+
+    finding_data = FindingSerializer(findings, many=True).data
+
+    disaster_data = []
+    for disaster in disasters:
+        disaster_data.append({
+            "id": disaster.id,
+            "item_type": "disaster",
+            "incident_code": disaster.incident_code,
+            "name": disaster.name,
+            "disaster_type": disaster.disaster_type,
+            "severity": disaster.severity,
+            "status": disaster.status,
+            "location": disaster.location,
+            "latitude": disaster.latitude,
+            "longitude": disaster.longitude,
+            "description": disaster.description,
+            "affected_population": disaster.affected_population,
+            "verification_status": disaster.verification_status,
+            "created_at": disaster.created_at,
+        })
+
+    for item in finding_data:
+        item["item_type"] = "finding"
+
+    return Response(disaster_data + finding_data)
 
 
 @api_view(["POST"])
@@ -290,7 +321,48 @@ def verify_finding(request, pk):
         "verification": VerificationSerializer(verification).data,
     }, status=status.HTTP_201_CREATED)
 
+@api_view(["POST"])
+def verify_disaster(request, pk):
+    try:
+        disaster = Disaster.objects.get(pk=pk)
+    except Disaster.DoesNotExist:
+        return Response(
+            {"detail": "Incident not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
 
+    action = request.data.get("action")
+
+    if action not in {"confirm", "reject"}:
+        return Response(
+            {"detail": "action must be confirm or reject."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if action == "confirm":
+        disaster.verification_status = "confirmed"
+    else:
+        disaster.verification_status = "rejected"
+
+    disaster.save()
+
+    log_event(
+        disaster,
+        f"Incident {disaster.incident_code} "
+        f"{disaster.verification_status} by verifier",
+        actor=request.user.username,
+        source="Verification",
+        evidence_ref=disaster.incident_code,
+    )
+
+    return Response(
+        {
+            "disaster": DisasterSerializer(disaster).data,
+            "action": action,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+    
 # --------------------------- Priority zones ---------------------------
 @api_view(["GET", "POST"])
 def priority_zones(request):

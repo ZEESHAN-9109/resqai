@@ -26,8 +26,10 @@ urlpatterns = [
     path("images/analyze/", views.analyze_image),
 
     # verification
-    path("verification/queue/", views.verification_queue),
-    path("verification/<int:pk>/", views.verify_finding),
+    # verification
+path("verification/queue/", views.verification_queue),
+path("verification/<int:pk>/", views.verify_finding),
+path("verification/disaster/<int:pk>/", views.verify_disaster),
 
     # priority
     path("priority-zones/", views.priority_zones),

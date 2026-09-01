@@ -62,6 +62,11 @@ class Disaster(models.Model):
     disaster_type = models.CharField(max_length=20, choices=DISASTER_TYPES)
     severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES, default="medium")
     status = models.CharField(max_length=12, choices=INCIDENT_STATUS, default="active")
+    verification_status = models.CharField(
+    max_length=12,
+    choices=VERIFICATION_STATUS,
+    default="unverified",
+)
     location = models.CharField(max_length=250)
     latitude = models.FloatField()
     longitude = models.FloatField()
