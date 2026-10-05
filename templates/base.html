@@ -7,7 +7,7 @@
   <title>{% block title %}RESQAI{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+ <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
   <link rel="stylesheet" href="{% static 'css/style.css' %}" />
   {% block extra_css %}{% endblock %}
 </head>
@@ -92,7 +92,7 @@
 
   <div class="toast-container"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="{% static 'js/config.js' %}"></script>
   <script src="{% static 'js/app.js' %}"></script>
   <script src="{% static 'js/live-data.js' %}"></script>
