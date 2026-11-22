@@ -25,21 +25,51 @@
   const MapManager = {
     map: null,
     layers: {},
+resizeObserver: null,
 
     init(elId, center, zoom) {
-      if (this.map) return this.map;
+     if (this.map) {
+    setTimeout(() => {
+        this.map.invalidateSize({ pan: false });
+    }, 300);
+    return this.map;
+}
       const el = document.getElementById(elId);
       if (!el || typeof L === "undefined") return null;
-      this.map = L.map(elId, { zoomControl: true, attributionControl: true })
-        .setView(center || [22.5, 80], zoom || 5);
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: "abcd", maxZoom: 19,
-      }).addTo(this.map);
+       this.map = L.map(el, {
+    zoomControl: true,
+    attributionControl: true,
+    scrollWheelZoom: true,
+    doubleClickZoom: true,
+    dragging: true,
+    touchZoom: true,
+    boxZoom: true,
+    keyboard: true
+})
+.setView(center || [22.5, 80], zoom || 5);
+      L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    {
+        attribution: 'Tiles © Esri',
+        maxZoom: 19,
+        maxNativeZoom: 16
+    }
+).addTo(this.map);
       ["earthquake", "fire", "incident", "priority", "route", "team", "hospital", "shelter", "relief"].forEach(k => {
         this.layers[k] = L.layerGroup().addTo(this.map);
       });
       return this.map;
+
+// Automatically resize Leaflet when the map container changes
+if (window.ResizeObserver) {
+    this.resizeObserver = new ResizeObserver(() => {
+        if (this.map) {
+            this.map.invalidateSize({ pan: false });
+        }
+    });
+
+    this.resizeObserver.observe(el);
+}
     },
 
     color: (k) => COLORS[k],
@@ -70,19 +100,29 @@
     },
 
     drawRoute(coords, color) {
-      const line = L.polyline(coords, { color: color || COLORS.route, weight: 4, opacity: 0.85, dashArray: "6 6" });
-      line.addTo(this.layers.route);
-      this.map.fitBounds(line.getBounds(), { padding: [40, 40] });
-      return line;
-    },
+    const line = L.polyline(coords, {
+        color: color || COLORS.route,
+        weight: 4,
+        opacity: 0.85,
+        dashArray: "6 6"
+    });
 
-    fit(points) {
-      if (!this.map || !points.length) return;
-      this.map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 12 });
-    },
+    line.addTo(this.layers.route);
+    return line;
+},
+
+  fit(points) {
+    if (!this.map || !points.length) return;
+
+    // Only fit markers when explicitly requested.
+    this.map.fitBounds(L.latLngBounds(points), {
+        padding: [40, 40],
+        maxZoom: 12
+    });
+},
 
     destroy() { if (this.map) { this.map.remove(); this.map = null; this.layers = {}; } },
   };
 
-  window.RESQAI.MapManager = MapManager;
+  window.RESQAI.MapManager = MapManager; 
 })();
